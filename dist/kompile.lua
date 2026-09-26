@@ -26,7 +26,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.8.0",
+	Version = "4.9.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -34,6 +34,7 @@ local Library = {
 	UserScale = 1,
 	GlowEnabled = true,
 	KeybindListEnabled = true,
+	OutlineDrag = true,
 	Theme = {
 		Background = Color3.fromHex("050408"), -- content area and groupboxes
 		Chrome = Color3.fromHex("08070c"), -- title bar, sidebar, status bar
@@ -1666,24 +1667,55 @@ function Library:CreateWindow(info)
 	end)
 
 	-- Drag by the header strip (the search box and buttons still work).
-	local dragging, dragStart, startPos
+	-- With OutlineDrag on, only an outline follows the mouse (like Windows' outline dragging)
+	-- and the window slides there on release.
+	local OutlineCorner = corner(WINDOW_RADIUS)
+	local Outline = create("Frame", {
+		AnchorPoint = Main.AnchorPoint,
+		BackgroundTransparency = 0.93,
+		Visible = false,
+		ZIndex = 40,
+		Theme = { BackgroundColor3 = "Accent" },
+		Parent = ScreenGui,
+	}, { OutlineCorner, create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = 1.5, Theme = { Color = "Accent" } }) })
+
+	local dragging, moved, dragStart, startPos
+	local function dragTarget(input)
+		local delta = input.Position - dragStart
+		return UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y), delta
+	end
 	connect(Main.InputBegan, function(input)
 		if isPointer(input) and input.Position.Y - Main.AbsolutePosition.Y <= (STRIP + HEADER) * scaleFactor() then
-			dragging, dragStart, startPos = true, input.Position, Main.Position
+			dragging, moved, dragStart, startPos = true, false, input.Position, Main.Position
 		end
 	end)
 	connect(UserInputService.InputChanged, function(input)
 		if dragging and isMove(input) then
-			local delta = input.Position - dragStart
-			Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			local target, delta = dragTarget(input)
+			if not Library.OutlineDrag then
+				Main.Position = target
+			else
+				-- Only show the outline once the mouse has actually moved, so a click doesn't flash it.
+				if not moved and delta.Magnitude > 3 then
+					moved = true
+					Outline.Size = UDim2.fromOffset(Main.AbsoluteSize.X, Main.AbsoluteSize.Y)
+					OutlineCorner.CornerRadius = UDim.new(0, WINDOW_RADIUS * scaleFactor())
+					Outline.Visible = true
+				end
+				Outline.Position = target
+			end
 		end
 		if Library.Tooltip.Visible and input.UserInputType == Enum.UserInputType.MouseMovement then
 			Library.Tooltip.Position = UDim2.fromOffset(input.Position.X + 14, input.Position.Y + 16)
 		end
 	end)
 	connect(UserInputService.InputEnded, function(input)
-		if isPointer(input) then
+		if dragging and isPointer(input) then
 			dragging = false
+			if moved then
+				Outline.Visible = false
+				tween(Main, { Position = Outline.Position }, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
+			end
 		end
 	end)
 
@@ -2153,6 +2185,14 @@ function Library:BuildSettingsTab(window, name)
 		Tooltip = "Shows your bound keys and which features are on, even with the menu closed.",
 		Callback = function(enabled)
 			Library:SetKeybindList(enabled)
+		end,
+	})
+	Menu:AddToggle("OutlineDrag", {
+		Text = "Outline drag",
+		Default = self.OutlineDrag,
+		Tooltip = "While dragging, move an outline and drop the window on release.",
+		Callback = function(enabled)
+			Library.OutlineDrag = enabled
 		end,
 	})
 	Menu:AddToggle("WindowGlow", {
