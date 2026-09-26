@@ -26,7 +26,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.9.0",
+	Version = "4.10.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -35,6 +35,7 @@ local Library = {
 	GlowEnabled = true,
 	KeybindListEnabled = true,
 	OutlineDrag = true,
+	WatermarkEnabled = true,
 	Theme = {
 		Background = Color3.fromHex("050408"), -- content area and groupboxes
 		Chrome = Color3.fromHex("08070c"), -- title bar, sidebar, status bar
@@ -310,6 +311,9 @@ function Library:SetScale(scale)
 	end
 	if self.PanelScale then
 		self.PanelScale.Scale = scale
+	end
+	if self.WatermarkScale then
+		self.WatermarkScale.Scale = scale
 	end
 end
 
@@ -1211,6 +1215,166 @@ function Library:SetKeybindList(enabled)
 	refreshKeybinds()
 end
 
+--// Watermark: logo, you, ping, FPS and player count in a bar that's always on screen.
+-- Icons are drawn from frames so they never depend on a font having the glyph.
+
+local function iconHolder(parent, width, height, order)
+	return create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(width, height), LayoutOrder = order, Parent = parent })
+end
+
+local function drawPerson(parent, x, headSize, bodyWidth)
+	create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromOffset(x, 1),
+		Size = UDim2.fromOffset(headSize, headSize),
+		Theme = { BackgroundColor3 = "SubText" },
+		Parent = parent,
+	}, { corner(headSize) })
+	create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0, x, 1, -1),
+		Size = UDim2.fromOffset(bodyWidth, 5),
+		Theme = { BackgroundColor3 = "SubText" },
+		Parent = parent,
+	}, { corner(3) })
+end
+
+local function buildWatermark(ScreenGui)
+	local Bar = create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(0, 32),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Visible = Library.WatermarkEnabled,
+		Theme = { BackgroundColor3 = "Background" },
+		Parent = ScreenGui,
+	}, { corner(8), stroke("Border"), list(0, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 4, 0, 4) })
+	Library.WatermarkScale = create("UIScale", { Scale = Library.UserScale, Parent = Bar })
+	Library.Watermark = Bar
+
+	local order = 0
+	local function segment()
+		order = order + 1
+		if order > 1 then
+			create("Frame", { Size = UDim2.fromOffset(1, 14), LayoutOrder = order, Theme = { BackgroundColor3 = "Border" }, Parent = Bar })
+			order = order + 1
+		end
+		return create("Frame", {
+			BackgroundTransparency = 1,
+			Size = UDim2.fromOffset(0, 32),
+			AutomaticSize = Enum.AutomaticSize.X,
+			LayoutOrder = order,
+			Parent = Bar,
+		}, { list(6, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 10, 0, 10) })
+	end
+	local function value(parent, layoutOrder)
+		return text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), FontFace = FONT_SEMI, LayoutOrder = layoutOrder, Parent = parent })
+	end
+	local function unit(parent, label, layoutOrder)
+		text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), TextSize = 12, Text = label, LayoutOrder = layoutOrder, Theme = { TextColor3 = "Muted" }, Parent = parent })
+	end
+
+	-- Logo
+	local Logo = segment()
+	Logo:FindFirstChildOfClass("UIPadding").PaddingLeft = UDim.new(0, 2)
+	local Tile = create("Frame", { Size = UDim2.fromOffset(22, 22), LayoutOrder = 1, Theme = { BackgroundColor3 = "Accent" }, Parent = Logo }, { corner(6) })
+	text({ Size = UDim2.fromScale(1, 1), FontFace = FONT_BOLD, TextSize = 14, Text = "K", TextXAlignment = Enum.TextXAlignment.Center, Parent = Tile })
+
+	-- You
+	local User = segment()
+	drawPerson(iconHolder(User, 12, 14, 1), 6, 6, 10)
+	text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), FontFace = FONT_MEDIUM, Text = LocalPlayer.DisplayName, LayoutOrder = 2, Parent = User })
+
+	-- Ping, with signal bars that fill by connection quality
+	local Ping = segment()
+	local Signal = iconHolder(Ping, 14, 12, 1)
+	local signalBars = {}
+	for index, barHeight in ipairs({ 3, 6, 9, 12 }) do
+		signalBars[index] = create("Frame", {
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.new(0, (index - 1) * 3.5, 1, 0),
+			Size = UDim2.fromOffset(2.5, barHeight),
+			Parent = Signal,
+		}, { corner(1) })
+	end
+	local PingValue = value(Ping, 2)
+	unit(Ping, "ms", 3)
+
+	-- FPS, with a small gauge (top half of a ring plus a needle)
+	local Fps = segment()
+	local Gauge = iconHolder(Fps, 14, 8, 1)
+	Gauge.ClipsDescendants = true
+	create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(14, 14), Parent = Gauge }, {
+		corner(7),
+		create("UIStroke", { Thickness = 1.6, Theme = { Color = "SubText" } }),
+	})
+	-- Frames rotate around their centre, so the needle is placed half its length out from the pivot at (7, 7).
+	create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromOffset(8.6, 5.1),
+		Size = UDim2.fromOffset(1.6, 5),
+		Rotation = 40,
+		Theme = { BackgroundColor3 = "Accent" },
+		Parent = Gauge,
+	}, { corner(1) })
+	local FpsValue = value(Fps, 2)
+	unit(Fps, "fps", 3)
+
+	-- Players
+	local Crowd = segment()
+	local People = iconHolder(Crowd, 16, 14, 1)
+	drawPerson(People, 11, 5, 8)
+	drawPerson(People, 5, 6, 10)
+	local PlayerValue = value(Crowd, 2)
+	local PlayerUnit = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), TextSize = 12, LayoutOrder = 3, Theme = { TextColor3 = "Muted" }, Parent = Crowd })
+
+	-- Drag anywhere on the bar.
+	local dragging, dragStart, startPos
+	Bar.InputBegan:Connect(function(input)
+		if isPointer(input) then
+			dragging, dragStart, startPos = true, input.Position, Bar.Position
+		end
+	end)
+	connect(UserInputService.InputChanged, function(input)
+		if dragging and isMove(input) then
+			local delta = input.Position - dragStart
+			Bar.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+	connect(UserInputService.InputEnded, function(input)
+		if isPointer(input) then
+			dragging = false
+		end
+	end)
+
+	local lastFps, lastPing = 0, 0
+	local function paint(fps, ping)
+		lastFps, lastPing = fps or lastFps, ping or lastPing
+		local T = Library.Theme
+		PingValue.Text = tostring(lastPing)
+		FpsValue.Text = tostring(lastFps)
+		local count = #Players:GetPlayers()
+		PlayerValue.Text = tostring(count)
+		PlayerUnit.Text = count == 1 and "player" or "players"
+		local lit = lastPing <= 80 and 4 or lastPing <= 150 and 3 or lastPing <= 250 and 2 or 1
+		for index, bar in ipairs(signalBars) do
+			bar.BackgroundColor3 = index <= lit and T.Accent or T.BorderLight
+		end
+	end
+	table.insert(ThemeCallbacks, function()
+		paint()
+	end)
+	paint(0, 0)
+	Library._paintWatermark = paint
+end
+
+function Library:SetWatermark(enabled)
+	self.WatermarkEnabled = enabled
+	if self.Watermark then
+		self.Watermark.Visible = enabled
+	end
+end
+
 --// Window
 
 function Library:CreateWindow(info)
@@ -1531,6 +1695,9 @@ function Library:CreateWindow(info)
 			end)
 			ping = ok and math.floor(seconds * 1000 + 0.5) or 0
 			paintStatus()
+			if Library._paintWatermark then
+				Library._paintWatermark(fps, ping)
+			end
 		end
 	end)
 
@@ -1547,6 +1714,7 @@ function Library:CreateWindow(info)
 	}, { corner(), stroke("BorderLight"), padding(3), list(1) })
 
 	buildKeybindPanel(ScreenGui)
+	buildWatermark(ScreenGui)
 
 	-- Notifications and tooltip
 	self.NotifyHolder = create("Frame", {
@@ -2185,6 +2353,14 @@ function Library:BuildSettingsTab(window, name)
 		Tooltip = "Shows your bound keys and which features are on, even with the menu closed.",
 		Callback = function(enabled)
 			Library:SetKeybindList(enabled)
+		end,
+	})
+	Menu:AddToggle("Watermark", {
+		Text = "Watermark",
+		Default = self.WatermarkEnabled,
+		Tooltip = "The bar with your name, ping, FPS and player count.",
+		Callback = function(enabled)
+			Library:SetWatermark(enabled)
 		end,
 	})
 	Menu:AddToggle("OutlineDrag", {
