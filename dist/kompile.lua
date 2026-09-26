@@ -26,13 +26,14 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.7.0",
+	Version = "4.8.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
 	Folder = "Kompile",
 	UserScale = 1,
 	GlowEnabled = true,
+	KeybindListEnabled = true,
 	Theme = {
 		Background = Color3.fromHex("050408"), -- content area and groupboxes
 		Chrome = Color3.fromHex("08070c"), -- title bar, sidebar, status bar
@@ -306,6 +307,9 @@ function Library:SetScale(scale)
 	if self.Scale then
 		self.Scale.Scale = scale
 	end
+	if self.PanelScale then
+		self.PanelScale.Scale = scale
+	end
 end
 
 --// Options
@@ -336,13 +340,41 @@ local function newOption(id, kind, opts)
 	return option
 end
 
+-- Every keybind, for the active keybinds panel. Changes are batched into one redraw per frame.
+local KeybindEntries = {}
+local keybindRefreshPending = false
+local function refreshKeybinds()
+	if keybindRefreshPending then
+		return
+	end
+	keybindRefreshPending = true
+	task.defer(function()
+		keybindRefreshPending = false
+		if Library._renderKeybinds and not Library.Unloaded then
+			Library._renderKeybinds()
+		end
+	end)
+end
+
 -- Key chip shared by standalone keybinds and toggles.
 -- opts.Mode: "Toggle" (flip state on press), "Hold" (on while held), "Press" (fire once).
-local function newKeybind(id, opts, parent, position, onPress, onRelease)
+-- opts.ShowInList = false keeps it out of the keybinds panel.
+-- meta (internal): Label for the panel, and GetState() for whether its feature is on.
+local function newKeybind(id, opts, parent, position, onPress, onRelease, meta)
+	meta = meta or {}
 	local option = newOption(id, "Keybind", opts)
 	option.Value = parseKey(opts.Default)
 	option.Mode = opts.Mode or "Toggle"
 	option.State = false
+
+	local entry = { Option = option, Label = meta.Label or opts.Text or id or "Keybind", Hidden = opts.ShowInList == false }
+	entry.GetState = meta.GetState or function()
+		if option.Mode == "Press" then
+			return entry.PulseUntil ~= nil and os.clock() < entry.PulseUntil
+		end
+		return option.State
+	end
+	table.insert(KeybindEntries, entry)
 
 	local picking = false
 	local Chip = create("TextButton", {
@@ -369,6 +401,7 @@ local function newKeybind(id, opts, parent, position, onPress, onRelease)
 		for _, fn in ipairs(self.Changed) do
 			fire(fn, self.Value)
 		end
+		refreshKeybinds()
 	end
 
 	Chip.MouseButton1Click:Connect(function()
@@ -408,10 +441,13 @@ local function newKeybind(id, opts, parent, position, onPress, onRelease)
 			fire(opts.Callback, true)
 		else
 			fire(opts.Callback)
+			entry.PulseUntil = os.clock() + 0.3
+			task.delay(0.32, refreshKeybinds)
 		end
 		if onPress then
 			onPress()
 		end
+		refreshKeybinds()
 	end)
 
 	connect(UserInputService.InputEnded, function(input)
@@ -421,6 +457,7 @@ local function newKeybind(id, opts, parent, position, onPress, onRelease)
 			if onRelease then
 				onRelease()
 			end
+			refreshKeybinds()
 		end
 	end)
 
@@ -577,6 +614,7 @@ function Elements:AddToggle(id, opts)
 		self.Value = value
 		paint(true)
 		self:_emit()
+		refreshKeybinds()
 	end
 
 	-- Adds a key chip on the right that flips (or, in Hold mode, holds) the toggle.
@@ -591,7 +629,12 @@ function Elements:AddToggle(id, opts)
 			end
 		end, function()
 			option:SetValue(false)
-		end)
+		end, {
+			Label = opts.Text or id,
+			GetState = function()
+				return option.Value
+			end,
+		})
 	end
 
 	Row.MouseEnter:Connect(function()
@@ -1065,6 +1108,108 @@ local function newGroupbox(tab, column, title)
 	return group
 end
 
+--// Active keybinds panel: stays on screen while the menu is hidden
+
+local function buildKeybindPanel(ScreenGui)
+	local Panel = create("Frame", {
+		Position = UDim2.new(0, 16, 0.38, 0),
+		Size = UDim2.fromOffset(200, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = false,
+		Theme = { BackgroundColor3 = "Background" },
+		Parent = ScreenGui,
+	}, { corner(), stroke("Border") })
+	Library.PanelScale = create("UIScale", { Scale = Library.UserScale, Parent = Panel })
+	create("Frame", { Position = UDim2.fromOffset(RADIUS, 0), Size = UDim2.new(1, -2 * RADIUS, 0, 2), Theme = { BackgroundColor3 = "Accent" }, Parent = Panel })
+	text({ Position = UDim2.fromOffset(12, 2), Size = UDim2.new(1, -24, 0, 28), FontFace = FONT_BOLD, TextSize = 12, Text = "Keybinds", Parent = Panel })
+	create("Frame", { Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Border" }, Parent = Panel })
+	local Rows = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, 31),
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Parent = Panel,
+	}, { list(2), padding(6, 12, 8, 12) })
+
+	-- Drag by the header.
+	local dragging, dragStart, startPos
+	Panel.InputBegan:Connect(function(input)
+		if isPointer(input) and input.Position.Y - Panel.AbsolutePosition.Y <= 30 * Library.PanelScale.Scale then
+			dragging, dragStart, startPos = true, input.Position, Panel.Position
+		end
+	end)
+	connect(UserInputService.InputChanged, function(input)
+		if dragging and isMove(input) then
+			local delta = input.Position - dragStart
+			Panel.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		end
+	end)
+	connect(UserInputService.InputEnded, function(input)
+		if isPointer(input) then
+			dragging = false
+		end
+	end)
+
+	local rows = {}
+	function Library._renderKeybinds()
+		for _, row in ipairs(rows) do
+			row:Destroy()
+		end
+		rows = {}
+		local T = Library.Theme
+		for index, entry in ipairs(KeybindEntries) do
+			if not entry.Hidden and entry.Option.Value then
+				local active = entry.GetState() == true
+				local Row = create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), LayoutOrder = index, Parent = Rows })
+				create("Frame", {
+					AnchorPoint = Vector2.new(0, 0.5),
+					Position = UDim2.fromScale(0, 0.5),
+					Size = UDim2.fromOffset(8, 8),
+					BackgroundColor3 = active and T.Accent or T.Field,
+					Parent = Row,
+				}, {
+					corner(2),
+					create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = 1, Color = active and T.Accent or T.BorderLight }),
+				})
+				text({
+					Position = UDim2.fromOffset(16, 0),
+					Size = UDim2.new(1, -76, 1, 0),
+					Text = entry.Label,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					TextColor3 = active and T.Text or T.SubText,
+					Theme = false,
+					Parent = Row,
+				})
+				local Key = text({
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.fromScale(1, 0.5),
+					AutomaticSize = Enum.AutomaticSize.X,
+					Size = UDim2.fromOffset(0, 16),
+					FontFace = FONT_MEDIUM,
+					TextSize = 11,
+					Text = keyName(entry.Option.Value),
+					BackgroundTransparency = 0,
+					BackgroundColor3 = T.Field,
+					TextColor3 = active and T.Accent or T.Muted,
+					Theme = false,
+					Parent = Row,
+				})
+				corner(4).Parent = Key
+				padding(0, 6, 0, 6).Parent = Key
+				table.insert(rows, Row)
+			end
+		end
+		Panel.Visible = Library.KeybindListEnabled and #rows > 0
+	end
+	table.insert(ThemeCallbacks, refreshKeybinds)
+	refreshKeybinds()
+end
+
+function Library:SetKeybindList(enabled)
+	self.KeybindListEnabled = enabled
+	refreshKeybinds()
+end
+
 --// Window
 
 function Library:CreateWindow(info)
@@ -1399,6 +1544,8 @@ function Library:CreateWindow(info)
 		Theme = { BackgroundColor3 = "Chrome" },
 		Parent = Content,
 	}, { corner(), stroke("BorderLight"), padding(3), list(1) })
+
+	buildKeybindPanel(ScreenGui)
 
 	-- Notifications and tooltip
 	self.NotifyHolder = create("Frame", {
@@ -1995,10 +2142,19 @@ function Library:BuildSettingsTab(window, name)
 		Text = "Menu key",
 		Default = self.ToggleKey and self.ToggleKey.Name or "RightShift",
 		Mode = "Press",
+		ShowInList = false,
 	})
 	MenuKey:OnChanged(function(key)
 		Library:SetToggleKey(key)
 	end)
+	Menu:AddToggle("KeybindList", {
+		Text = "Keybind list",
+		Default = self.KeybindListEnabled,
+		Tooltip = "Shows your bound keys and which features are on, even with the menu closed.",
+		Callback = function(enabled)
+			Library:SetKeybindList(enabled)
+		end,
+	})
 	Menu:AddToggle("WindowGlow", {
 		Text = "Window glow",
 		Default = self.GlowEnabled,
