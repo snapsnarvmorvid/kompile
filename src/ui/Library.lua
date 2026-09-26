@@ -21,7 +21,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.6.0",
+	Version = "4.7.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -524,7 +524,7 @@ function Elements:AddToggle(id, opts)
 		Parent = Holder,
 	})
 
-	-- Checkbox on the left, with a drawn check mark.
+	-- Checkbox on the left; it fills with the accent when on.
 	local BoxEdge = stroke("BorderLight")
 	local Box = create("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
@@ -532,22 +532,6 @@ function Elements:AddToggle(id, opts)
 		Size = UDim2.fromOffset(14, 14),
 		Parent = Row,
 	}, { corner(4), BoxEdge })
-	local ShortLeg = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(4.5, 7.5),
-		Size = UDim2.fromOffset(2, 4),
-		Rotation = -45,
-		Theme = { BackgroundColor3 = "Text" },
-		Parent = Box,
-	})
-	local LongLeg = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(8, 6.5),
-		Size = UDim2.fromOffset(2, 8),
-		Rotation = 40,
-		Theme = { BackgroundColor3 = "Text" },
-		Parent = Box,
-	})
 	local Label = text({
 		Position = UDim2.fromOffset(22, 0),
 		Size = UDim2.new(1, -22, 1, 0),
@@ -563,8 +547,6 @@ function Elements:AddToggle(id, opts)
 		local goals = {
 			[Box] = { BackgroundColor3 = on and T.Accent or T.Field },
 			[BoxEdge] = { Color = on and T.Accent or T.BorderLight },
-			[ShortLeg] = { BackgroundTransparency = on and 0 or 1 },
-			[LongLeg] = { BackgroundTransparency = on and 0 or 1 },
 			[Label] = { TextColor3 = on and T.Text or T.SubText },
 		}
 		for instance, props in pairs(goals) do
@@ -1103,6 +1085,7 @@ function Library:CreateWindow(info)
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(width, height),
+		Visible = false, -- Window:Toggle(true) at the end fades it in
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = ScreenGui,
 	}, { corner(WINDOW_RADIUS), stroke("Border") })
@@ -1436,13 +1419,87 @@ function Library:CreateWindow(info)
 
 	local Window = { Tabs = {}, Main = Main }
 
+	-- Quick fade on open and close. Every transparency in the window is tweened together
+	-- (a CanvasGroup would clip the glow), then restored so the next fade starts clean.
+	local FADE = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local FADE_PROPS = {
+		{ "GuiObject", "BackgroundTransparency" },
+		{ "TextLabel", "TextTransparency" },
+		{ "TextButton", "TextTransparency" },
+		{ "TextBox", "TextTransparency" },
+		{ "ImageLabel", "ImageTransparency" },
+		{ "ImageButton", "ImageTransparency" },
+		{ "ScrollingFrame", "ScrollBarImageTransparency" },
+		{ "UIStroke", "Transparency" },
+	}
+	local open, fade, fadeId = false, nil, 0
+
+	local function snapshot()
+		local entries = {}
+		local function add(instance)
+			for _, pair in ipairs(FADE_PROPS) do
+				if instance:IsA(pair[1]) and instance[pair[2]] < 1 then
+					table.insert(entries, { instance, pair[2], instance[pair[2]] })
+				end
+			end
+		end
+		add(Main)
+		for _, instance in ipairs(Main:GetDescendants()) do
+			add(instance)
+		end
+		return entries
+	end
+
+	local function settle()
+		if fade then
+			for _, t in ipairs(fade.Tweens) do
+				t:Cancel()
+			end
+			for _, entry in ipairs(fade.Entries) do
+				entry[1][entry[2]] = entry[3]
+			end
+			fade = nil
+		end
+	end
+
+	local function runFade(entries, toHidden, onDone)
+		fadeId = fadeId + 1
+		local id = fadeId
+		local tweens = {}
+		for _, entry in ipairs(entries) do
+			if not toHidden then
+				entry[1][entry[2]] = 1
+			end
+			table.insert(tweens, tween(entry[1], { [entry[2]] = toHidden and 1 or entry[3] }, FADE))
+		end
+		fade = { Entries = entries, Tweens = tweens }
+		task.delay(FADE.Time, function()
+			if id == fadeId then
+				if onDone then
+					onDone()
+				end
+				settle()
+			end
+		end)
+	end
+
 	function Window:Toggle(state)
 		if state == nil then
-			state = not Main.Visible
+			state = not open
 		end
-		Main.Visible = state
-		if not state then
+		if state == open then
+			return
+		end
+		open = state
+		settle()
+		if state then
+			Main.Visible = true
+			runFade(snapshot(), false)
+		else
 			Library.Tooltip.Visible = false
+			runFade(snapshot(), true, function()
+				Main.Visible = false
+			end)
 		end
 	end
 
@@ -1702,6 +1759,7 @@ function Library:CreateWindow(info)
 	end
 
 	self.Window = Window
+	Window:Toggle(true)
 	return Window
 end
 
