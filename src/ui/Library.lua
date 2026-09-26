@@ -21,7 +21,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.5.0",
+	Version = "4.6.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -65,7 +65,7 @@ local FONT_BOLD = Font.new(FAMILY, Enum.FontWeight.Bold)
 
 local RADIUS = 6 -- controls, boxes, tabs
 local WINDOW_RADIUS = 10
-local SIDEBAR = 160
+local SIDEBAR = 180
 local STRIP = 2 -- accent strip across the top
 local HEADER = 50 -- page title row, and the logo block in the sidebar
 local STATUSBAR = 26
@@ -1084,8 +1084,8 @@ function Library:CreateWindow(info)
 	info = info or {}
 	local camera = workspace.CurrentCamera
 	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
-	local width = math.min(info.Width or 700, viewport.X - 24)
-	local height = math.min(info.Height or 470, viewport.Y - 24)
+	local width = math.min(info.Width or 820, viewport.X - 24)
+	local height = math.min(info.Height or 560, viewport.Y - 24)
 
 	self.Title = info.Title or "Kompile"
 	self.ToggleKey = parseKey(info.ToggleKey or "RightShift")
