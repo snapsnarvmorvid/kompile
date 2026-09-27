@@ -29,7 +29,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.10.0",
+	Version = "4.11.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -746,17 +746,42 @@ function Elements:AddSlider(id, opts)
 	return option
 end
 
+-- opts.Multi = true: Value is a set, { Name = true, ... }, and the list stays open while picking.
 function Elements:AddDropdown(id, opts)
 	local option = newOption(id, "Dropdown", opts)
 	option.Values = opts.Values or {}
+	option.Multi = opts.Multi == true
 
 	local function resolve(value)
+		if option.Multi then
+			-- Accepts a set ({ Name = true }, as saved in configs) or a list ({ "Name", ... })
+			local set = {}
+			if type(value) == "table" then
+				for key, v in pairs(value) do
+					if type(key) == "number" then
+						set[v] = true
+					elseif v then
+						set[key] = true
+					end
+				end
+			elseif value ~= nil then
+				set[value] = true
+			end
+			return set
+		end
 		if type(value) == "number" then
 			return option.Values[value]
 		end
 		return value
 	end
 	option.Value = resolve(opts.Default)
+
+	local function isSelected(value)
+		if option.Multi then
+			return option.Value[value] == true
+		end
+		return value == option.Value
+	end
 
 	local Holder = self:_holder()
 	list(5).Parent = Holder
@@ -834,19 +859,26 @@ function Elements:AddDropdown(id, opts)
 
 	local function display()
 		local T = Library.Theme
-		if option.Value ~= nil then
-			Selected.Text = tostring(option.Value)
-			Selected.TextColor3 = T.Text
-		else
-			Selected.Text = opts.Placeholder or "Select"
-			Selected.TextColor3 = T.Muted
+		local shown
+		if option.Multi then
+			local picked = {}
+			for _, value in ipairs(option.Values) do
+				if option.Value[value] then
+					table.insert(picked, tostring(value))
+				end
+			end
+			shown = #picked > 0 and table.concat(picked, ", ") or nil
+		elseif option.Value ~= nil then
+			shown = tostring(option.Value)
 		end
+		Selected.Text = shown or opts.Placeholder or (option.Multi and "None" or "Select")
+		Selected.TextColor3 = shown and T.Text or T.Muted
 	end
 
 	local function paintItems()
 		local T = Library.Theme
 		for _, item in ipairs(items) do
-			local selected = item.Value == option.Value
+			local selected = isSelected(item.Value)
 			item.Button.BackgroundColor3 = T.Hover
 			item.Button.TextColor3 = selected and T.Accent or T.SubText
 			item.Bar.Visible = selected
@@ -890,8 +922,14 @@ function Elements:AddDropdown(id, opts)
 					Item.BackgroundTransparency = 1
 				end)
 				Item.MouseButton1Click:Connect(function()
-					option:SetValue(value)
-					setOpen(false)
+					if option.Multi then
+						local set = table.clone(option.Value)
+						set[value] = (not set[value]) or nil
+						option:SetValue(set)
+					else
+						option:SetValue(value)
+						setOpen(false)
+					end
 				end)
 				table.insert(items, { Button = Item, Bar = Bar, Value = value })
 			end
@@ -934,9 +972,23 @@ function Elements:AddDropdown(id, opts)
 		end)
 	end
 
+	local function sameSet(a, b)
+		for key in pairs(a) do
+			if not b[key] then
+				return false
+			end
+		end
+		for key in pairs(b) do
+			if not a[key] then
+				return false
+			end
+		end
+		return true
+	end
+
 	function option:SetValue(value)
 		value = resolve(value)
-		if value == self.Value then
+		if self.Multi and sameSet(value, self.Value) or not self.Multi and value == self.Value then
 			return
 		end
 		self.Value = value
@@ -947,7 +999,21 @@ function Elements:AddDropdown(id, opts)
 
 	function option:SetValues(values)
 		self.Values = values or {}
-		if self.Value ~= nil and not table.find(self.Values, self.Value) then
+		if self.Multi then
+			-- Drop picks that are no longer offered
+			local kept, dropped = {}, false
+			for value in pairs(self.Value) do
+				if table.find(self.Values, value) then
+					kept[value] = true
+				else
+					dropped = true
+				end
+			end
+			if dropped then
+				self.Value = kept
+			end
+			display()
+		elseif self.Value ~= nil and not table.find(self.Values, self.Value) then
 			self.Value = nil
 			display()
 		end

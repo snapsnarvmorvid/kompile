@@ -75,6 +75,7 @@ Box:AddToggle("Enabled", { Text = "Enabled", Default = false, Callback = functio
 	:AddKeybind("EnabledKey", { Default = "F", Mode = "Toggle" })
 Box:AddSlider("Amount", { Text = "Amount", Min = 0, Max = 100, Default = 50, Suffix = "%" })
 Box:AddDropdown("Mode", { Text = "Mode", Values = { "A", "B" }, Default = 1, Searchable = true })
+Box:AddDropdown("Targets", { Text = "Targets", Values = { "A", "B" }, Multi = true, Default = { "A" } }) -- Value = { A = true }
 Box:AddInput("Name", { Text = "Name", Placeholder = "Type here", Finished = true })
 Box:AddKeybind("Panic", { Text = "Panic key", Default = "End", Mode = "Press", Callback = function() end })
 Box:AddButton({ Text = "Do thing", Func = function() end, Tooltip = "Explains the thing" })
