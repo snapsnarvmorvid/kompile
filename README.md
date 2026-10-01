@@ -10,7 +10,7 @@
 loadstring(game:HttpGet("https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/loader.lua"))()
 ```
 
-Toggle the menu with **Right Shift** (rebind it in Settings). On mobile, tap the **K** button.
+Toggle the menu with **Right Shift** (rebind it in Settings). On mobile, tap the **k** button.
 
 **Without GitHub:** paste `dist/kompile.lua` into your executor. It's the whole hub in one file, so nothing is downloaded from the repo. After changing anything in `src/`, `games/`, `scripts/` or `examples/`, rebuild it with `python tools/bundle.py`.
 
@@ -60,11 +60,12 @@ assets/               logo, banner and UI preview
 
 A compact UI library written for this hub, in the spirit of the classic hand-built menus:
 
-- Near-black solid panels with soft rounded corners, a purple strip across the top, and a subtle purple glow that travels around the window.
-- A numbered sidebar of tabs, and two columns of collapsible groupboxes whose titles sit in the border.
-- Checkboxes that fill purple when on, keybind chips, and flat sliders.
-- A pill search box that finds any control on any tab and jumps to it, plus a status bar with live FPS, ping and an FPS graph.
-- One purple accent, changeable in Settings.
+- Flat near-black panels with square corners and a 1px black outline around the window and every control.
+- The kompile wordmark and the tabs across the top; two columns of plain groups whose rows are split by hairlines.
+- Everything in lowercase (typed text and player names keep their case; set `Library.Lowercase = false` to turn it off).
+- Square checkboxes that fill purple when on, key names in mono, and flat sliders with mono values.
+- A search box that finds any control on any tab and jumps to it, plus a status bar with a footer you can set (`Library:SetFooter("...")`) and live FPS and ping.
+- One purple accent, used only for what's on or selected, changeable in Settings.
 
 ```lua
 local Window = Library:CreateWindow({ Title = "Kompile", Footer = "v1.0.0", ToggleKey = "RightShift" })

@@ -7,10 +7,10 @@
 
 local Library = (function()
 --[[
-	Kompile UI v4
-	A solid, compact Roblox UI library for the Kompile hub: sidebar tabs, bordered
-	groupboxes with their titles set into the border, checkboxes, feature search and
-	a status bar.
+	Kompile UI v5
+	A flat, compact Roblox UI library for the Kompile hub: wordmark and tabs across the top,
+	square controls with a 1px black outline, plain groups split by hairlines, lowercase
+	text, feature search and a status bar.
 
 	local Window = Library:CreateWindow({ Title = "Kompile", Footer = "v1.0.0", ToggleKey = "RightShift" })
 	local Tab = Window:AddTab("Main")
@@ -29,22 +29,25 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "4.11.0",
+	Version = "5.0.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
 	Folder = "Kompile",
 	UserScale = 1,
-	GlowEnabled = true,
+	GlowEnabled = false, -- kept for older scripts; v5 has no glow
 	KeybindListEnabled = true,
 	OutlineDrag = true,
 	WatermarkEnabled = true,
+	Lowercase = true, -- every label and button is shown in lowercase (typed text and player names aren't)
 	Theme = {
-		Background = Color3.fromHex("050408"), -- content area and groupboxes
-		Chrome = Color3.fromHex("08070c"), -- title bar, sidebar, status bar
+		Background = Color3.fromHex("0b0a10"), -- window body
+		Chrome = Color3.fromHex("08070c"), -- title bar, status bar
 		Field = Color3.fromHex("0f0d14"), -- inputs, checkboxes, tracks
 		Button = Color3.fromHex("141219"),
 		Hover = Color3.fromHex("110f17"),
+		Outline = Color3.fromHex("000000"), -- 1px edge around the window and every control
+		Divider = Color3.fromHex("16141c"), -- hairlines between rows
 		Border = Color3.fromHex("1a1723"),
 		BorderLight = Color3.fromHex("26222f"),
 		Text = Color3.fromHex("e9e6f5"),
@@ -73,13 +76,18 @@ local FONT = Font.new(FAMILY, Enum.FontWeight.Regular)
 local FONT_MEDIUM = Font.new(FAMILY, Enum.FontWeight.Medium)
 local FONT_SEMI = Font.new(FAMILY, Enum.FontWeight.SemiBold)
 local FONT_BOLD = Font.new(FAMILY, Enum.FontWeight.Bold)
+local FONT_MONO = Font.new("rbxasset://fonts/families/RobotoMono.json", Enum.FontWeight.Regular) -- values, keys, stats
 
-local RADIUS = 6 -- controls, boxes, tabs
-local WINDOW_RADIUS = 10
-local SIDEBAR = 180
-local STRIP = 2 -- accent strip across the top
-local HEADER = 50 -- page title row, and the logo block in the sidebar
+local RADIUS = 0 -- square everything
+local WINDOW_RADIUS = 0
+local TITLEBAR = 40 -- wordmark, tabs, search
 local STATUSBAR = 26
+
+-- The wordmark, downloaded once into the executor's workspace and shown with getcustomasset.
+-- Without those functions the title bar spells it in text instead.
+local LOGO_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark.png"
+local LOGO_PATH = "Kompile/assets/wordmark.png"
+local LOGO_RATIO = 335 / 80
 
 local TWEEN = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_FAST = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -89,12 +97,28 @@ local KEY_SHORT = { MouseButton1 = "MB1", MouseButton2 = "MB2", MouseButton3 = "
 
 --// Helpers
 
+-- Keep a label's text lowercase, now and whenever it changes (typed text in TextBoxes is left alone).
+local function lowercase(label)
+	local function apply()
+		if Library.Lowercase then
+			local lower = string.lower(label.Text)
+			if lower ~= label.Text then
+				label.Text = lower
+			end
+		end
+	end
+	apply()
+	label:GetPropertyChangedSignal("Text"):Connect(apply)
+end
+
+-- props.KeepCase = true opts a label out of lowercase (player names).
 local function create(className, props, children)
 	local instance = Instance.new(className)
 	if instance:IsA("GuiObject") then
 		instance.BorderSizePixel = 0
 	end
 	local parent
+	local keepCase = false
 	for key, value in pairs(props or {}) do
 		if key == "Theme" then
 			table.insert(Registry, { instance, value })
@@ -103,12 +127,17 @@ local function create(className, props, children)
 			end
 		elseif key == "Parent" then
 			parent = value
+		elseif key == "KeepCase" then
+			keepCase = value == true
 		else
 			instance[key] = value
 		end
 	end
 	for _, child in ipairs(children or {}) do
 		child.Parent = instance
+	end
+	if not keepCase and (instance:IsA("TextLabel") or instance:IsA("TextButton")) then
+		lowercase(instance)
 	end
 	instance.Parent = parent
 	return instance
@@ -129,15 +158,22 @@ local function text(props)
 	return create("TextLabel", props)
 end
 
-local function corner(radius)
-	return create("UICorner", { CornerRadius = UDim.new(0, radius or RADIUS) })
+-- Everything is square in v5; this stays so layouts can still pass a corner in their children list.
+local function corner()
+	return create("UICorner", { CornerRadius = UDim.new(0, RADIUS) })
 end
 
+-- Fully round, for the few things that are circles (the search magnifier).
+local function round()
+	return create("UICorner", { CornerRadius = UDim.new(1, 0) })
+end
+
+-- The 1px black outline every control and panel gets.
 local function stroke(themeKey)
 	return create("UIStroke", {
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		Thickness = 1,
-		Theme = { Color = themeKey or "Border" },
+		Theme = { Color = themeKey or "Outline" },
 	})
 end
 
@@ -291,6 +327,72 @@ local function flash(target)
 	end)
 end
 
+--// Wordmark
+
+-- Content id for the wordmark image, or nil if the executor can't load local images.
+-- Downloaded once to LOGO_PATH; a file that isn't a PNG (say, an error page) is fetched again.
+local logoAsset
+local function wordmarkAsset()
+	if logoAsset ~= nil then
+		return logoAsset or nil
+	end
+	logoAsset = false
+	local getAsset = getcustomasset or getsynasset
+	if type(getAsset) ~= "function" or type(writefile) ~= "function" or type(readfile) ~= "function"
+		or type(isfile) ~= "function" or type(isfolder) ~= "function" or type(makefolder) ~= "function" then
+		return nil
+	end
+	local ok, id = pcall(function()
+		local cached = isfile(LOGO_PATH) and readfile(LOGO_PATH) or ""
+		if cached:sub(2, 4) ~= "PNG" then
+			local data = game:HttpGet(LOGO_URL)
+			if data:sub(2, 4) ~= "PNG" then
+				return nil
+			end
+			for _, folder in ipairs({ "Kompile", "Kompile/assets" }) do
+				if not isfolder(folder) then
+					makefolder(folder)
+				end
+			end
+			writefile(LOGO_PATH, data)
+		end
+		return getAsset(LOGO_PATH)
+	end)
+	if ok and type(id) == "string" and id ~= "" then
+		logoAsset = id
+	end
+	return logoAsset or nil
+end
+
+-- The wordmark at `height` px: spelled in text straight away (purple k), swapped for the image once
+-- it has loaded. Returns the holder frame.
+local function buildLogo(parent, height, layoutOrder)
+	local Holder = create("Frame", {
+		BackgroundTransparency = 1,
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, height),
+		LayoutOrder = layoutOrder or 1,
+		Parent = parent,
+	}, { list(0, true, { VerticalAlignment = Enum.VerticalAlignment.Center }) })
+	local K = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, height), FontFace = FONT_BOLD, TextSize = height + 2, Text = "k", LayoutOrder = 1, Theme = { TextColor3 = "Accent" }, Parent = Holder })
+	local Rest = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, height), FontFace = FONT_BOLD, TextSize = height + 2, Text = "ompile", LayoutOrder = 2, Parent = Holder })
+	task.spawn(function()
+		local asset = wordmarkAsset()
+		if asset and Holder.Parent then
+			K:Destroy()
+			Rest:Destroy()
+			create("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = asset,
+				ScaleType = Enum.ScaleType.Fit,
+				Size = UDim2.fromOffset(math.floor(height * LOGO_RATIO + 0.5), height),
+				Parent = Holder,
+			})
+		end
+	end)
+	return Holder
+end
+
 --// Theme
 
 function Library:SetTheme(changes)
@@ -385,17 +487,30 @@ local function newKeybind(id, opts, parent, position, onPress, onRelease, meta)
 	table.insert(KeybindEntries, entry)
 
 	local picking = false
+	-- Just the key name in mono on the right of the row; click it to rebind.
 	local Chip = create("TextButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = position,
 		AutomaticSize = Enum.AutomaticSize.X,
 		Size = UDim2.fromOffset(0, 18),
+		BackgroundTransparency = 1,
 		AutoButtonColor = false,
-		FontFace = FONT_MEDIUM,
+		FontFace = FONT_MONO,
 		TextSize = 11,
-		Theme = { BackgroundColor3 = "Field", TextColor3 = "SubText" },
+		TextXAlignment = Enum.TextXAlignment.Right,
+		Theme = { TextColor3 = "Muted" },
 		Parent = parent,
-	}, { corner(), stroke("BorderLight"), padding(0, 6, 0, 6) })
+	}, { padding(0, 0, 0, 6) })
+	Chip.MouseEnter:Connect(function()
+		if not picking then
+			Chip.TextColor3 = Library.Theme.SubText
+		end
+	end)
+	Chip.MouseLeave:Connect(function()
+		if not picking then
+			Chip.TextColor3 = Library.Theme.Muted
+		end
+	end)
 
 	local function display()
 		Chip.Text = picking and "..." or keyName(option.Value)
@@ -430,7 +545,7 @@ local function newKeybind(id, opts, parent, position, onPress, onRelease, meta)
 				return
 			end
 			picking = false
-			Chip.TextColor3 = Library.Theme.SubText
+			Chip.TextColor3 = Library.Theme.Muted
 			display()
 			task.defer(function()
 				Library.Picking = false
@@ -482,7 +597,21 @@ function Elements:_next()
 	return self.Order
 end
 
+-- A hairline between rows: every control after the first in a group (or after an AddDivider) gets one above it.
+function Elements:_separator()
+	if (self.Rows or 0) > 0 then
+		create("Frame", {
+			Size = UDim2.new(1, 0, 0, 1),
+			LayoutOrder = self:_next(),
+			Theme = { BackgroundColor3 = "Divider" },
+			Parent = self.Container,
+		})
+	end
+	self.Rows = (self.Rows or 0) + 1
+end
+
 function Elements:_holder(height)
+	self:_separator()
 	return create("Frame", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, height or 0),
@@ -515,13 +644,15 @@ function Elements:AddLabel(content, wrap)
 	return object
 end
 
+-- A stronger black line that splits a group into parts; the row after it skips its own hairline.
 function Elements:AddDivider()
 	create("Frame", {
 		Size = UDim2.new(1, 0, 0, 1),
 		LayoutOrder = self:_next(),
-		Theme = { BackgroundColor3 = "Border" },
+		Theme = { BackgroundColor3 = "Outline" },
 		Parent = self.Container,
 	})
+	self.Rows = 0
 end
 
 function Elements:AddButton(opts, func)
@@ -529,7 +660,7 @@ function Elements:AddButton(opts, func)
 		opts = { Text = opts, Func = func }
 	end
 	local Holder = self:_holder(26)
-	local Edge = stroke("BorderLight")
+	local Edge = stroke()
 	local Button = create("TextButton", {
 		Size = UDim2.fromScale(1, 1),
 		AutoButtonColor = false,
@@ -544,7 +675,7 @@ function Elements:AddButton(opts, func)
 		tween(Edge, { Color = Library.Theme.Accent })
 	end)
 	Button.MouseLeave:Connect(function()
-		tween(Edge, { Color = Library.Theme.BorderLight })
+		tween(Edge, { Color = Library.Theme.Outline })
 	end)
 	Button.MouseButton1Click:Connect(function()
 		Button.BackgroundColor3 = Library.Theme.Accent
@@ -574,17 +705,16 @@ function Elements:AddToggle(id, opts)
 		Parent = Holder,
 	})
 
-	-- Checkbox on the left; it fills with the accent when on.
-	local BoxEdge = stroke("BorderLight")
+	-- Square checkbox on the left with a black edge; it fills with the accent when on.
 	local Box = create("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.fromScale(0, 0.5),
-		Size = UDim2.fromOffset(14, 14),
+		Size = UDim2.fromOffset(12, 12),
 		Parent = Row,
-	}, { corner(4), BoxEdge })
+	}, { stroke() })
 	local Label = text({
-		Position = UDim2.fromOffset(22, 0),
-		Size = UDim2.new(1, -22, 1, 0),
+		Position = UDim2.fromOffset(20, 0),
+		Size = UDim2.new(1, -20, 1, 0),
 		Text = opts.Text or id,
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Theme = false,
@@ -596,7 +726,6 @@ function Elements:AddToggle(id, opts)
 		local on = option.Value
 		local goals = {
 			[Box] = { BackgroundColor3 = on and T.Accent or T.Field },
-			[BoxEdge] = { Color = on and T.Accent or T.BorderLight },
 			[Label] = { TextColor3 = on and T.Text or T.SubText },
 		}
 		for instance, props in pairs(goals) do
@@ -673,24 +802,24 @@ function Elements:AddSlider(id, opts)
 	end
 	option.Value = math.clamp(round(opts.Default or min), min, max)
 
-	local Holder = self:_holder(34)
-	text({ Size = UDim2.new(1, -70, 0, 16), Text = opts.Text or id, TextTruncate = Enum.TextTruncate.AtEnd, Parent = Holder })
+	local Holder = self:_holder(32)
+	text({ Size = UDim2.new(1, -90, 0, 16), Text = opts.Text or id, TextTruncate = Enum.TextTruncate.AtEnd, Parent = Holder })
 	local Value = text({
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.fromOffset(70, 16),
-		FontFace = FONT_MEDIUM,
+		Size = UDim2.fromOffset(90, 16),
+		FontFace = FONT_MONO,
+		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		Theme = { TextColor3 = "Accent" },
 		Parent = Holder,
 	})
 	local Track = create("Frame", {
 		Position = UDim2.fromOffset(0, 23),
-		Size = UDim2.new(1, 0, 0, 6),
+		Size = UDim2.new(1, 0, 0, 5),
 		Theme = { BackgroundColor3 = "Field" },
 		Parent = Holder,
-	}, { corner(), stroke("BorderLight") })
-	local Fill = create("Frame", { Theme = { BackgroundColor3 = "Accent" }, Parent = Track }, { corner() })
+	}, { stroke() })
+	local Fill = create("Frame", { Theme = { BackgroundColor3 = "Accent" }, Parent = Track })
 	local Hit = create("TextButton", {
 		BackgroundTransparency = 1,
 		Text = "",
@@ -789,7 +918,7 @@ function Elements:AddDropdown(id, opts)
 		text({ Size = UDim2.new(1, 0, 0, 16), Text = opts.Text, LayoutOrder = 1, Parent = Holder })
 	end
 
-	local FieldEdge = stroke("BorderLight")
+	local FieldEdge = stroke()
 	local Field = create("TextButton", {
 		Size = UDim2.new(1, 0, 0, 26),
 		AutoButtonColor = false,
@@ -825,14 +954,14 @@ function Elements:AddDropdown(id, opts)
 		LayoutOrder = 3,
 		Theme = { BackgroundColor3 = "Chrome" },
 		Parent = Holder,
-	}, { corner(), stroke("BorderLight"), padding(3), list(1) })
+	}, { corner(), stroke(), padding(3), list(1) })
 
 	local Filter
 	if opts.Searchable then
 		Filter = create("TextBox", {
 			Size = UDim2.new(1, 0, 0, 24),
 			Text = "",
-			PlaceholderText = "Filter",
+			PlaceholderText = "filter",
 			ClearTextOnFocus = false,
 			FontFace = FONT,
 			TextSize = 13,
@@ -942,7 +1071,7 @@ function Elements:AddDropdown(id, opts)
 		open = state
 		Panel.Visible = state
 		Chevron.Rotation = state and -90 or 90
-		FieldEdge.Color = state and Library.Theme.Accent or Library.Theme.BorderLight
+		FieldEdge.Color = state and Library.Theme.Accent or Library.Theme.Outline
 		if state then
 			if Filter then
 				Filter.Text = ""
@@ -961,7 +1090,7 @@ function Elements:AddDropdown(id, opts)
 	end)
 	Field.MouseLeave:Connect(function()
 		if not open then
-			tween(FieldEdge, { Color = Library.Theme.BorderLight })
+			tween(FieldEdge, { Color = Library.Theme.Outline })
 		end
 	end)
 	if Filter then
@@ -1042,7 +1171,7 @@ function Elements:AddInput(id, opts)
 		text({ Size = UDim2.new(1, 0, 0, 16), Text = opts.Text, LayoutOrder = 1, Parent = Holder })
 	end
 
-	local Edge = stroke("BorderLight")
+	local Edge = stroke()
 	local Box = create("TextBox", {
 		Size = UDim2.new(1, 0, 0, 26),
 		Text = option.Value,
@@ -1075,7 +1204,7 @@ function Elements:AddInput(id, opts)
 		tween(Edge, { Color = Library.Theme.Accent })
 	end)
 	Box.FocusLost:Connect(function()
-		tween(Edge, { Color = Library.Theme.BorderLight })
+		tween(Edge, { Color = Library.Theme.Outline })
 		if opts.Finished then
 			option:SetValue(Box.Text)
 		end
@@ -1096,7 +1225,7 @@ function Elements:AddKeybind(id, opts)
 	return newKeybind(id, opts, Holder, UDim2.new(1, 0, 0.5, 0))
 end
 
--- Bordered box with its title set into the top border, like a fieldset.
+-- A group is just its title in grey over its rows; the rows are split by hairlines (Elements:_separator).
 local function newGroupbox(tab, column, title)
 	local Outer = create("Frame", {
 		BackgroundTransparency = 1,
@@ -1104,81 +1233,27 @@ local function newGroupbox(tab, column, title)
 		AutomaticSize = Enum.AutomaticSize.Y,
 		LayoutOrder = #column:GetChildren(),
 		Parent = column,
-	})
-	local BoxPadding = padding(17, 12, 12, 12)
-	local Box = create("Frame", {
-		Position = UDim2.fromOffset(0, 7),
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		Theme = { BackgroundColor3 = "Background" },
+	}, { list(6) })
+	text({
+		Size = UDim2.new(1, 0, 0, 14),
+		FontFace = FONT_MEDIUM,
+		TextSize = 12,
+		Text = title or "",
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 1,
+		Theme = { TextColor3 = "SubText" },
 		Parent = Outer,
-	}, { corner(), stroke("Border"), BoxPadding })
+	})
 	local Content = create("Frame", {
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		Parent = Box,
-	}, { list(9) })
-	-- The legend sits on the border line; its background matches the box so it cuts a gap in the border.
-	local Legend = text({
-		Position = UDim2.fromOffset(9, 0),
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 14),
-		FontFace = FONT_BOLD,
-		TextSize = 11,
-		Text = string.upper(title or ""),
-		BackgroundTransparency = 0,
-		Theme = { BackgroundColor3 = "Background", TextColor3 = "SubText" },
+		LayoutOrder = 2,
 		Parent = Outer,
-	})
-	padding(0, 4, 0, 4).Parent = Legend
+	}, { list(6) })
 
-	-- Collapse button, also set into the border (right side), drawn as a minus / plus.
-	local Collapse = create("TextButton", {
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -8, 0, 0),
-		Size = UDim2.fromOffset(18, 14),
-		AutoButtonColor = false,
-		Text = "",
-		Theme = { BackgroundColor3 = "Background" },
-		Parent = Outer,
-	})
-	local Across = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(8, 2),
-		Theme = { BackgroundColor3 = "Muted" },
-		Parent = Collapse,
-	})
-	local Down = create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(2, 8),
-		Visible = false,
-		Theme = { BackgroundColor3 = "Muted" },
-		Parent = Collapse,
-	})
-
-	local group = setmetatable({ Container = Content, Order = 0, Tab = tab, Column = column }, Elements)
-	local function setCollapsed(collapsed)
-		Content.Visible = not collapsed
-		Down.Visible = collapsed
-		BoxPadding.PaddingBottom = UDim.new(0, collapsed and 0 or 12)
-		BoxPadding.PaddingTop = UDim.new(0, collapsed and 13 or 17)
-	end
-	function group.Expand()
-		setCollapsed(false)
-	end
-	Collapse.MouseButton1Click:Connect(function()
-		setCollapsed(Content.Visible)
-	end)
-	Collapse.MouseEnter:Connect(function()
-		Across.BackgroundColor3, Down.BackgroundColor3 = Library.Theme.Text, Library.Theme.Text
-	end)
-	Collapse.MouseLeave:Connect(function()
-		Across.BackgroundColor3, Down.BackgroundColor3 = Library.Theme.Muted, Library.Theme.Muted
-	end)
-
+	local group = setmetatable({ Container = Content, Order = 0, Rows = 0, Tab = tab, Column = column }, Elements)
+	function group.Expand() end -- groups don't collapse any more; search still calls this
 	return group
 end
 
@@ -1192,11 +1267,10 @@ local function buildKeybindPanel(ScreenGui)
 		Visible = false,
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = ScreenGui,
-	}, { corner(), stroke("Border") })
+	}, { stroke() })
 	Library.PanelScale = create("UIScale", { Scale = Library.UserScale, Parent = Panel })
-	create("Frame", { Position = UDim2.fromOffset(RADIUS, 0), Size = UDim2.new(1, -2 * RADIUS, 0, 2), Theme = { BackgroundColor3 = "Accent" }, Parent = Panel })
-	text({ Position = UDim2.fromOffset(12, 2), Size = UDim2.new(1, -24, 0, 28), FontFace = FONT_BOLD, TextSize = 12, Text = "Keybinds", Parent = Panel })
-	create("Frame", { Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Border" }, Parent = Panel })
+	text({ Position = UDim2.fromOffset(12, 0), Size = UDim2.new(1, -24, 0, 30), FontFace = FONT_MEDIUM, TextSize = 12, Text = "keybinds", Theme = { TextColor3 = "SubText" }, Parent = Panel })
+	create("Frame", { Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Outline" }, Parent = Panel })
 	local Rows = create("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(0, 31),
@@ -1242,8 +1316,7 @@ local function buildKeybindPanel(ScreenGui)
 					BackgroundColor3 = active and T.Accent or T.Field,
 					Parent = Row,
 				}, {
-					corner(2),
-					create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = 1, Color = active and T.Accent or T.BorderLight }),
+					create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = 1, Color = T.Outline }),
 				})
 				text({
 					Position = UDim2.fromOffset(16, 0),
@@ -1259,17 +1332,14 @@ local function buildKeybindPanel(ScreenGui)
 					Position = UDim2.fromScale(1, 0.5),
 					AutomaticSize = Enum.AutomaticSize.X,
 					Size = UDim2.fromOffset(0, 16),
-					FontFace = FONT_MEDIUM,
+					FontFace = FONT_MONO,
 					TextSize = 11,
 					Text = keyName(entry.Option.Value),
-					BackgroundTransparency = 0,
-					BackgroundColor3 = T.Field,
 					TextColor3 = active and T.Accent or T.Muted,
 					Theme = false,
 					Parent = Row,
 				})
-				corner(4).Parent = Key
-				padding(0, 6, 0, 6).Parent = Key
+				padding(0, 0, 0, 6).Parent = Key
 				table.insert(rows, Row)
 			end
 		end
@@ -1284,118 +1354,63 @@ function Library:SetKeybindList(enabled)
 	refreshKeybinds()
 end
 
---// Watermark: logo, you, ping, FPS and player count in a bar that's always on screen.
--- Icons are drawn from frames so they never depend on a font having the glyph.
-
-local function iconHolder(parent, width, height, order)
-	return create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(width, height), LayoutOrder = order, Parent = parent })
-end
-
-local function drawPerson(parent, x, headSize, bodyWidth)
-	create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.fromOffset(x, 1),
-		Size = UDim2.fromOffset(headSize, headSize),
-		Theme = { BackgroundColor3 = "SubText" },
-		Parent = parent,
-	}, { corner(headSize) })
-	create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0, x, 1, -1),
-		Size = UDim2.fromOffset(bodyWidth, 5),
-		Theme = { BackgroundColor3 = "SubText" },
-		Parent = parent,
-	}, { corner(3) })
-end
+--// Watermark: wordmark, you, ping, FPS and player count in a bar that's always on screen.
 
 local function buildWatermark(ScreenGui)
 	local Bar = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 10),
-		Size = UDim2.fromOffset(0, 32),
+		Size = UDim2.fromOffset(0, 28),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Visible = Library.WatermarkEnabled,
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = ScreenGui,
-	}, { corner(8), stroke("Border"), list(0, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 4, 0, 4) })
+	}, { stroke(), list(0, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 2, 0, 2) })
 	Library.WatermarkScale = create("UIScale", { Scale = Library.UserScale, Parent = Bar })
 	Library.Watermark = Bar
 
+	-- Segments split by short hairlines.
 	local order = 0
 	local function segment()
 		order = order + 1
 		if order > 1 then
-			create("Frame", { Size = UDim2.fromOffset(1, 14), LayoutOrder = order, Theme = { BackgroundColor3 = "Border" }, Parent = Bar })
+			create("Frame", { Size = UDim2.fromOffset(1, 12), LayoutOrder = order, Theme = { BackgroundColor3 = "BorderLight" }, Parent = Bar })
 			order = order + 1
 		end
 		return create("Frame", {
 			BackgroundTransparency = 1,
-			Size = UDim2.fromOffset(0, 32),
+			Size = UDim2.fromOffset(0, 28),
 			AutomaticSize = Enum.AutomaticSize.X,
 			LayoutOrder = order,
 			Parent = Bar,
-		}, { list(6, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 10, 0, 10) })
+		}, { list(4, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 9, 0, 9) })
 	end
-	local function value(parent, layoutOrder)
-		return text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), FontFace = FONT_SEMI, LayoutOrder = layoutOrder, Parent = parent })
+	local function value(parent)
+		return text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), FontFace = FONT_MONO, TextSize = 12, LayoutOrder = 1, Parent = parent })
 	end
-	local function unit(parent, label, layoutOrder)
-		text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), TextSize = 12, Text = label, LayoutOrder = layoutOrder, Theme = { TextColor3 = "Muted" }, Parent = parent })
+	local function unit(parent, label)
+		return text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), TextSize = 12, Text = label, LayoutOrder = 2, Theme = { TextColor3 = "Muted" }, Parent = parent })
 	end
 
-	-- Logo
-	local Logo = segment()
-	Logo:FindFirstChildOfClass("UIPadding").PaddingLeft = UDim.new(0, 2)
-	local Tile = create("Frame", { Size = UDim2.fromOffset(22, 22), LayoutOrder = 1, Theme = { BackgroundColor3 = "Accent" }, Parent = Logo }, { corner(6) })
-	text({ Size = UDim2.fromScale(1, 1), FontFace = FONT_BOLD, TextSize = 14, Text = "K", TextXAlignment = Enum.TextXAlignment.Center, Parent = Tile })
-
-	-- You
-	local User = segment()
-	drawPerson(iconHolder(User, 12, 14, 1), 6, 6, 10)
-	text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), FontFace = FONT_MEDIUM, Text = LocalPlayer.DisplayName, LayoutOrder = 2, Parent = User })
-
-	-- Ping, with signal bars that fill by connection quality
-	local Ping = segment()
-	local Signal = iconHolder(Ping, 14, 12, 1)
-	local signalBars = {}
-	for index, barHeight in ipairs({ 3, 6, 9, 12 }) do
-		signalBars[index] = create("Frame", {
-			AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.new(0, (index - 1) * 3.5, 1, 0),
-			Size = UDim2.fromOffset(2.5, barHeight),
-			Parent = Signal,
-		}, { corner(1) })
-	end
-	local PingValue = value(Ping, 2)
-	unit(Ping, "ms", 3)
-
-	-- FPS, with a small gauge (top half of a ring plus a needle)
-	local Fps = segment()
-	local Gauge = iconHolder(Fps, 14, 8, 1)
-	Gauge.ClipsDescendants = true
-	create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(14, 14), Parent = Gauge }, {
-		corner(7),
-		create("UIStroke", { Thickness = 1.6, Theme = { Color = "SubText" } }),
+	buildLogo(segment(), 13)
+	text({
+		AutomaticSize = Enum.AutomaticSize.X,
+		Size = UDim2.fromOffset(0, 16),
+		FontFace = FONT_MEDIUM,
+		TextSize = 12,
+		Text = LocalPlayer.DisplayName,
+		KeepCase = true,
+		Parent = segment(),
 	})
-	-- Frames rotate around their centre, so the needle is placed half its length out from the pivot at (7, 7).
-	create("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(8.6, 5.1),
-		Size = UDim2.fromOffset(1.6, 5),
-		Rotation = 40,
-		Theme = { BackgroundColor3 = "Accent" },
-		Parent = Gauge,
-	}, { corner(1) })
-	local FpsValue = value(Fps, 2)
-	unit(Fps, "fps", 3)
-
-	-- Players
+	local Ping = segment()
+	local PingValue = value(Ping)
+	unit(Ping, "ms")
+	local Fps = segment()
+	local FpsValue = value(Fps)
+	unit(Fps, "fps")
 	local Crowd = segment()
-	local People = iconHolder(Crowd, 16, 14, 1)
-	drawPerson(People, 11, 5, 8)
-	drawPerson(People, 5, 6, 10)
-	local PlayerValue = value(Crowd, 2)
-	local PlayerUnit = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), TextSize = 12, LayoutOrder = 3, Theme = { TextColor3 = "Muted" }, Parent = Crowd })
+	local PlayerValue = value(Crowd)
+	local PlayerUnit = unit(Crowd, "players")
 
 	-- Drag anywhere on the bar.
 	local dragging, dragStart, startPos
@@ -1419,20 +1434,12 @@ local function buildWatermark(ScreenGui)
 	local lastFps, lastPing = 0, 0
 	local function paint(fps, ping)
 		lastFps, lastPing = fps or lastFps, ping or lastPing
-		local T = Library.Theme
 		PingValue.Text = tostring(lastPing)
 		FpsValue.Text = tostring(lastFps)
 		local count = #Players:GetPlayers()
 		PlayerValue.Text = tostring(count)
 		PlayerUnit.Text = count == 1 and "player" or "players"
-		local lit = lastPing <= 80 and 4 or lastPing <= 150 and 3 or lastPing <= 250 and 2 or 1
-		for index, bar in ipairs(signalBars) do
-			bar.BackgroundColor3 = index <= lit and T.Accent or T.BorderLight
-		end
 	end
-	table.insert(ThemeCallbacks, function()
-		paint()
-	end)
 	paint(0, 0)
 	Library._paintWatermark = paint
 end
@@ -1472,148 +1479,56 @@ function Library:CreateWindow(info)
 		Visible = false, -- Window:Toggle(true) at the end fades it in
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = ScreenGui,
-	}, { corner(WINDOW_RADIUS), stroke("Border") })
+	}, { stroke() })
 	self.Scale = create("UIScale", { Scale = self.UserScale, Parent = Main })
 
-	-- Subtle purple glow around the window: stacked outlines that fade outward (Roblox has no real
-	-- blur), with a brighter section that slowly travels around the edge.
-	local Glow = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = Main })
-	local glowGradients = {}
-	for _, layer in ipairs({ { 1.5, 0.62 }, { 4, 0.82 }, { 8, 0.9 }, { 13, 0.95 } }) do
-		local gradient = create("UIGradient", {
-			Transparency = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 0),
-				NumberSequenceKeypoint.new(0.45, 0.72),
-				NumberSequenceKeypoint.new(1, 0.72),
-			}),
-		})
-		create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Parent = Glow }, {
-			corner(WINDOW_RADIUS + 1),
-			create("UIStroke", {
-				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-				Thickness = layer[1],
-				Transparency = layer[2],
-				Theme = { Color = "Accent" },
-			}, { gradient }),
-		})
-		table.insert(glowGradients, gradient)
-	end
-	connect(RunService.RenderStepped, function()
-		if Glow.Visible and Main.Visible then
-			local rotation = (os.clock() * 40) % 360
-			for _, gradient in ipairs(glowGradients) do
-				gradient.Rotation = rotation
-			end
-		end
-	end)
-	Glow.Visible = self.GlowEnabled
-
+	-- v5 has no glow; this stays so older scripts and saved configs that call it don't error.
 	function Library:SetGlow(enabled)
 		self.GlowEnabled = enabled
-		Glow.Visible = enabled
 	end
 
-	-- Accent strip across the top, inset so it starts and ends where the rounded corners begin.
-	create("Frame", { Position = UDim2.fromOffset(WINDOW_RADIUS, 0), Size = UDim2.new(1, -2 * WINDOW_RADIUS, 0, 2), Theme = { BackgroundColor3 = "Accent" }, Parent = Main })
-
-	-- Sidebar: K_ mark with the title and subtitle, numbered tabs, you at the bottom
-	local Sidebar = create("Frame", {
-		Position = UDim2.fromOffset(0, STRIP),
-		Size = UDim2.new(0, SIDEBAR, 1, -(STRIP + STATUSBAR)),
+	-- Title bar: wordmark / subtitle, tabs, then search and the hide button on the right.
+	local TitleBar = create("Frame", {
+		Size = UDim2.new(1, 0, 0, TITLEBAR),
 		Theme = { BackgroundColor3 = "Chrome" },
 		Parent = Main,
-	}, {
-		corner(WINDOW_RADIUS),
-		-- Square off every corner except the window's top-left.
-		create("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, WINDOW_RADIUS, 1, 0), Theme = { BackgroundColor3 = "Chrome" } }),
-		create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, WINDOW_RADIUS), Theme = { BackgroundColor3 = "Chrome" } }),
 	})
-	create("Frame", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0), Size = UDim2.new(0, 1, 1, 0), Theme = { BackgroundColor3 = "Border" }, Parent = Sidebar })
+	create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Outline" }, Parent = TitleBar })
 
-	text({ Position = UDim2.fromOffset(14, 11), Size = UDim2.fromOffset(16, 26), FontFace = FONT_BOLD, TextSize = 24, Text = "K", Theme = { TextColor3 = "Accent" }, Parent = Sidebar })
-	local Cursor = create("Frame", {
-		Position = UDim2.fromOffset(30, 31),
-		Size = UDim2.fromOffset(8, 3),
-		Theme = { BackgroundColor3 = "Text" },
-		Parent = Sidebar,
-	})
-	task.spawn(function()
-		while not Library.Unloaded do
-			task.wait(0.55)
-			Cursor.BackgroundTransparency = Cursor.BackgroundTransparency == 0 and 1 or 0
-		end
-	end)
-	text({ Position = UDim2.fromOffset(46, 11), Size = UDim2.new(1, -52, 0, 16), FontFace = FONT_BOLD, TextSize = 14, Text = self.Title, Parent = Sidebar })
-	text({
-		Position = UDim2.fromOffset(46, 27),
-		Size = UDim2.new(1, -52, 0, 14),
-		TextSize = 11,
-		Text = info.Subtitle or "script hub",
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		Theme = { TextColor3 = "Muted" },
-		Parent = Sidebar,
-	})
-	create("Frame", { Position = UDim2.fromOffset(12, HEADER), Size = UDim2.new(1, -25, 0, 1), Theme = { BackgroundColor3 = "Border" }, Parent = Sidebar })
-
-	local TabList = create("ScrollingFrame", {
+	local Left = create("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, HEADER + 8),
-		Size = UDim2.new(1, -1, 1, -(HEADER + 8 + 44)),
-		CanvasSize = UDim2.new(),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		ScrollBarThickness = 0,
-		Parent = Sidebar,
-	}, { list(2), padding(0, 8, 0, 8) })
-
-	local Me = create("Frame", {
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(0, 0, 1, -1),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = TitleBar,
+	}, { list(8, true, { VerticalAlignment = Enum.VerticalAlignment.Center }) })
+	buildLogo(Left, 15, 1)
+	if info.Subtitle ~= "" then
+		text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), Text = "/", LayoutOrder = 2, Theme = { TextColor3 = "BorderLight" }, Parent = Left })
+		text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), Text = info.Subtitle or "script hub", LayoutOrder = 3, Theme = { TextColor3 = "SubText" }, Parent = Left })
+	end
+	create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(10, 1), LayoutOrder = 4, Parent = Left })
+	local TabList = create("Frame", {
 		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.fromScale(0, 1),
-		Size = UDim2.new(1, -1, 0, 42),
-		Parent = Sidebar,
-	})
-	create("Frame", { Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Border" }, Parent = Me })
-	local Avatar = create("ImageLabel", {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 12, 0.5, 0),
-		Size = UDim2.fromOffset(22, 22),
-		Theme = { BackgroundColor3 = "Button" },
-		Parent = Me,
-	}, { corner(11) })
-	task.spawn(function()
-		local ok, image = pcall(function()
-			return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-		end)
-		if ok then
-			Avatar.Image = image
-		end
-	end)
-	text({ Position = UDim2.fromOffset(42, 6), Size = UDim2.new(1, -50, 0, 15), FontFace = FONT_MEDIUM, Text = LocalPlayer.DisplayName, TextTruncate = Enum.TextTruncate.AtEnd, Parent = Me })
-	text({ Position = UDim2.fromOffset(42, 21), Size = UDim2.new(1, -50, 0, 14), TextSize = 11, Text = "@" .. LocalPlayer.Name, TextTruncate = Enum.TextTruncate.AtEnd, Theme = { TextColor3 = "Muted" }, Parent = Me })
-
-	-- Content: page title, pill search and hide button, then the pages
-	local Content = create("Frame", {
-		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(SIDEBAR, STRIP),
-		Size = UDim2.new(1, -SIDEBAR, 1, -(STRIP + STATUSBAR)),
-		Parent = Main,
-	})
-	local Header = text({ Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -270, 0, HEADER), FontFace = FONT_BOLD, TextSize = 18, Parent = Content })
-	create("Frame", { Position = UDim2.fromOffset(0, HEADER), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Border" }, Parent = Content })
+		Size = UDim2.new(0, 0, 1, 0),
+		AutomaticSize = Enum.AutomaticSize.X,
+		LayoutOrder = 5,
+		Parent = Left,
+	}, { list(16, true) })
 
 	local HideButton = create("TextButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -12, 0, HEADER / 2),
-		Size = UDim2.fromOffset(26, 26),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		Size = UDim2.fromOffset(22, 22),
 		AutoButtonColor = false,
 		Text = "",
 		Theme = { BackgroundColor3 = "Field" },
-		Parent = Content,
-	}, { corner(), stroke("BorderLight") })
+		Parent = TitleBar,
+	}, { stroke() })
 	local HideBar = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(10, 2),
+		Size = UDim2.fromOffset(9, 2),
 		Theme = { BackgroundColor3 = "SubText" },
 		Parent = HideButton,
 	})
@@ -1624,38 +1539,38 @@ function Library:CreateWindow(info)
 		HideBar.BackgroundColor3 = Library.Theme.SubText
 	end)
 
-	local SearchEdge = stroke("BorderLight")
+	local SearchEdge = stroke()
 	local SearchField = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -46, 0, HEADER / 2),
-		Size = UDim2.fromOffset(190, 26),
+		Position = UDim2.new(1, -40, 0.5, 0),
+		Size = UDim2.fromOffset(150, 22),
 		Theme = { BackgroundColor3 = "Field" },
-		Parent = Content,
-	}, { corner(13), SearchEdge })
+		Parent = TitleBar,
+	}, { SearchEdge })
 	-- Magnifier drawn from a ring and a handle.
 	create("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(11, 8),
-		Size = UDim2.fromOffset(9, 9),
+		Position = UDim2.fromOffset(8, 6),
+		Size = UDim2.fromOffset(8, 8),
 		Parent = SearchField,
-	}, { corner(5), create("UIStroke", { Thickness = 1.4, Theme = { Color = "Muted" } }) })
+	}, { round(), create("UIStroke", { Thickness = 1.3, Theme = { Color = "Muted" } }) })
 	create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromOffset(21.5, 18.5),
-		Size = UDim2.fromOffset(1.5, 4.5),
+		Position = UDim2.fromOffset(17.5, 15.5),
+		Size = UDim2.fromOffset(1.4, 4),
 		Rotation = -45,
 		Theme = { BackgroundColor3 = "Muted" },
 		Parent = SearchField,
 	})
 	local SearchBox = create("TextBox", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(29, 0),
-		Size = UDim2.new(1, -40, 1, 0),
+		Position = UDim2.fromOffset(25, 0),
+		Size = UDim2.new(1, -32, 1, 0),
 		Text = "",
-		PlaceholderText = "Search",
+		PlaceholderText = "search",
 		ClearTextOnFocus = false,
 		FontFace = FONT,
-		TextSize = 13,
+		TextSize = 12,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Theme = { TextColor3 = "Text", PlaceholderColor3 = "Muted" },
 		Parent = SearchField,
@@ -1663,68 +1578,54 @@ function Library:CreateWindow(info)
 
 	local Pages = create("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, HEADER + 1),
-		Size = UDim2.new(1, 0, 1, -(HEADER + 1)),
+		Position = UDim2.fromOffset(0, TITLEBAR),
+		Size = UDim2.new(1, 0, 1, -(TITLEBAR + STATUSBAR)),
 		ClipsDescendants = true,
-		Parent = Content,
+		Parent = Main,
 	})
 
-	-- Status bar: menu key chip, footer in the middle, FPS/ping with a small graph on the right
+	-- Status bar: menu key chip and the footer on the left, FPS / ping on the right.
 	local StatusBar = create("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.fromScale(0, 1),
 		Size = UDim2.new(1, 0, 0, STATUSBAR),
 		Theme = { BackgroundColor3 = "Chrome" },
 		Parent = Main,
-	}, { corner(WINDOW_RADIUS) })
-	create("Frame", { Size = UDim2.new(1, 0, 0, WINDOW_RADIUS), Theme = { BackgroundColor3 = "Chrome" }, Parent = StatusBar })
-	create("Frame", { Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Border" }, Parent = StatusBar })
+	})
+	create("Frame", { Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Outline" }, Parent = StatusBar })
 
+	local StatusLeft = create("Frame", {
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(10, 1),
+		Size = UDim2.new(0, 0, 1, -1),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Parent = StatusBar,
+	}, { list(10, true, { VerticalAlignment = Enum.VerticalAlignment.Center }) })
 	local KeyChip = create("Frame", {
-		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 10, 0.5, 0),
 		Size = UDim2.fromOffset(0, 16),
 		AutomaticSize = Enum.AutomaticSize.X,
+		LayoutOrder = 1,
 		Theme = { BackgroundColor3 = "Field" },
-		Parent = StatusBar,
-	}, { corner(), stroke("BorderLight"), list(5, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 7, 0, 7) })
-	text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 14), TextSize = 11, Text = "Menu", LayoutOrder = 1, Theme = { TextColor3 = "Muted" }, Parent = KeyChip })
-	local KeyLabel = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 14), FontFace = FONT_SEMI, TextSize = 11, LayoutOrder = 2, Parent = KeyChip })
-
-	local Center = create("Frame", {
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(0, 14),
+		Parent = StatusLeft,
+	}, { stroke(), list(5, true, { VerticalAlignment = Enum.VerticalAlignment.Center }), padding(0, 6, 0, 6) })
+	text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 14), TextSize = 11, Text = "menu", LayoutOrder = 1, Theme = { TextColor3 = "Muted" }, Parent = KeyChip })
+	local KeyLabel = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 14), FontFace = FONT_MONO, TextSize = 11, LayoutOrder = 2, Parent = KeyChip })
+	local FooterLabel = text({
 		AutomaticSize = Enum.AutomaticSize.X,
-		Parent = StatusBar,
-	}, { list(6, true, { VerticalAlignment = Enum.VerticalAlignment.Center }) })
-	create("Frame", { Size = UDim2.fromOffset(5, 5), LayoutOrder = 1, Theme = { BackgroundColor3 = "Accent" }, Parent = Center })
-	text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 14), TextSize = 11, Text = info.Footer or self.Title, LayoutOrder = 2, Theme = { TextColor3 = "Muted" }, Parent = Center })
-
-	local GRAPH_BARS, GRAPH_HEIGHT = 16, 12
-	local Graph = create("Frame", {
-		BackgroundTransparency = 1,
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -10, 0.5, 0),
-		Size = UDim2.fromOffset(GRAPH_BARS * 3 - 1, GRAPH_HEIGHT),
-		Parent = StatusBar,
+		Size = UDim2.fromOffset(0, 14),
+		FontFace = FONT_MONO,
+		TextSize = 11,
+		Text = info.Footer or "",
+		LayoutOrder = 2,
+		Theme = { TextColor3 = "Muted" },
+		Parent = StatusLeft,
 	})
-	local bars, history = {}, {}
-	for index = 1, GRAPH_BARS do
-		bars[index] = create("Frame", {
-			AnchorPoint = Vector2.new(0, 1),
-			Position = UDim2.new(0, (index - 1) * 3, 1, 0),
-			Size = UDim2.fromOffset(2, 2),
-			Theme = { BackgroundColor3 = "BorderLight" },
-			Parent = Graph,
-		})
-		history[index] = 0
-	end
+
 	local FpsLabel = text({
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -(10 + GRAPH_BARS * 3 + 8), 0, 0),
-		Size = UDim2.new(0, 140, 1, 0),
+		Position = UDim2.new(1, -10, 0, 1),
+		Size = UDim2.new(0, 160, 1, -1),
+		FontFace = FONT_MONO,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Theme = { TextColor3 = "Muted" },
@@ -1734,19 +1635,15 @@ function Library:CreateWindow(info)
 	local fps, ping = 0, 0
 	local function paintStatus()
 		KeyLabel.Text = keyName(Library.ToggleKey)
-		FpsLabel.Text = fps .. " FPS  ·  " .. ping .. " ms"
-		local peak = 60
-		for _, value in ipairs(history) do
-			peak = math.max(peak, value)
-		end
-		for index, bar in ipairs(bars) do
-			local value = history[index]
-			bar.Size = UDim2.fromOffset(2, math.max(2, math.floor(GRAPH_HEIGHT * value / peak + 0.5)))
-			bar.BackgroundColor3 = index == GRAPH_BARS and Library.Theme.Text or (value > 0 and Library.Theme.Accent or Library.Theme.BorderLight)
-		end
+		FpsLabel.Text = fps .. " fps · " .. ping .. " ms"
 	end
 	table.insert(ThemeCallbacks, paintStatus)
 	paintStatus()
+
+	-- The footer text (left of the status bar), e.g. a script's live stats.
+	function Library:SetFooter(content)
+		FooterLabel.Text = tostring(content or "")
+	end
 
 	local frames = 0
 	connect(RunService.RenderStepped, function()
@@ -1757,8 +1654,6 @@ function Library:CreateWindow(info)
 			task.wait(0.5)
 			fps = frames * 2
 			frames = 0
-			table.remove(history, 1)
-			table.insert(history, fps)
 			local ok, seconds = pcall(function()
 				return LocalPlayer:GetNetworkPing()
 			end)
@@ -1773,14 +1668,14 @@ function Library:CreateWindow(info)
 	-- Search results, under the search field
 	local Results = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -46, 0, HEADER - 6),
+		Position = UDim2.new(1, -40, 0, TITLEBAR - 6),
 		Size = UDim2.fromOffset(240, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Visible = false,
 		ZIndex = 20,
 		Theme = { BackgroundColor3 = "Chrome" },
-		Parent = Content,
-	}, { corner(), stroke("BorderLight"), padding(3), list(1) })
+		Parent = Main,
+	}, { stroke(), padding(3), list(1) })
 
 	buildKeybindPanel(ScreenGui)
 	buildWatermark(ScreenGui)
@@ -1803,8 +1698,7 @@ function Library:CreateWindow(info)
 		Theme = { BackgroundColor3 = "Chrome", TextColor3 = "SubText" },
 		Parent = ScreenGui,
 	})
-	corner().Parent = self.Tooltip
-	stroke("BorderLight").Parent = self.Tooltip
+	stroke().Parent = self.Tooltip
 	padding(4, 8, 4, 8).Parent = self.Tooltip
 
 	local Window = { Tabs = {}, Main = Main }
@@ -1922,7 +1816,7 @@ function Library:CreateWindow(info)
 		return UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y), delta
 	end
 	connect(Main.InputBegan, function(input)
-		if isPointer(input) and input.Position.Y - Main.AbsolutePosition.Y <= (STRIP + HEADER) * scaleFactor() then
+		if isPointer(input) and input.Position.Y - Main.AbsolutePosition.Y <= TITLEBAR * scaleFactor() then
 			dragging, moved, dragStart, startPos = true, false, input.Position, Main.Position
 		end
 	end)
@@ -1968,11 +1862,11 @@ function Library:CreateWindow(info)
 			Size = UDim2.fromOffset(42, 42),
 			AutoButtonColor = false,
 			FontFace = FONT_BOLD,
-			TextSize = 18,
-			Text = "K",
+			TextSize = 20,
+			Text = "k",
 			Theme = { BackgroundColor3 = "Chrome", TextColor3 = "Accent" },
 			Parent = ScreenGui,
-		}, { corner(), stroke("BorderLight") })
+		}, { stroke() })
 		MobileButton.MouseButton1Click:Connect(function()
 			Window:Toggle()
 		end)
@@ -2062,7 +1956,7 @@ function Library:CreateWindow(info)
 		runSearch()
 	end)
 	SearchBox.FocusLost:Connect(function(enterPressed)
-		SearchEdge.Color = Library.Theme.BorderLight
+		SearchEdge.Color = Library.Theme.Outline
 		if enterPressed and resultButtons.First then
 			reveal(resultButtons.First)
 			return
@@ -2074,59 +1968,44 @@ function Library:CreateWindow(info)
 		end)
 	end)
 
+	-- Tabs sit in the title bar: the name, with an accent underline on the open one.
 	function Window:AddTab(name)
 		local selected = false
 		local Button = create("TextButton", {
-			Size = UDim2.new(1, 0, 0, 30),
+			Size = UDim2.new(0, 0, 1, 0),
+			AutomaticSize = Enum.AutomaticSize.X,
 			BackgroundTransparency = 1,
 			AutoButtonColor = false,
-			Text = "",
+			FontFace = FONT_MEDIUM,
+			TextSize = 13,
+			Text = name,
 			LayoutOrder = #self.Tabs + 1,
-			Theme = { BackgroundColor3 = "Hover" },
 			Parent = TabList,
-		}, { corner() })
+		})
 		local Bar = create("Frame", {
-			AnchorPoint = Vector2.new(0, 0.5),
-			Position = UDim2.new(0, 3, 0.5, 0),
-			Size = UDim2.fromOffset(3, 14),
+			AnchorPoint = Vector2.new(0, 1),
+			Position = UDim2.fromScale(0, 1),
+			Size = UDim2.new(1, 0, 0, 2),
 			Visible = false,
 			Theme = { BackgroundColor3 = "Accent" },
 			Parent = Button,
-		}, { corner(2) })
-		local Label = text({
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(1, -44, 1, 0),
-			FontFace = FONT_MEDIUM,
-			Text = name,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			Theme = false,
-			Parent = Button,
-		})
-		local Number = text({
-			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -10, 0, 0),
-			Size = UDim2.new(0, 24, 1, 0),
-			FontFace = FONT_MEDIUM,
-			TextSize = 11,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			Text = string.format("%02d", #self.Tabs + 1),
-			Theme = false,
-			Parent = Button,
 		})
 
+		-- Two scrolling columns split by a black line down the middle.
 		local Page = create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = Pages })
+		create("Frame", { Position = UDim2.fromScale(0.5, 0), Size = UDim2.new(0, 1, 1, 0), Theme = { BackgroundColor3 = "Outline" }, Parent = Page })
 		local function column(left)
 			return create("ScrollingFrame", {
 				BackgroundTransparency = 1,
-				Position = left and UDim2.fromOffset(12, 0) or UDim2.new(0.5, 4, 0, 0),
-				Size = UDim2.new(0.5, -16, 1, 0),
+				Position = left and UDim2.fromOffset(14, 0) or UDim2.new(0.5, 15, 0, 0),
+				Size = UDim2.new(0.5, -28, 1, 0),
 				CanvasSize = UDim2.new(),
 				AutomaticCanvasSize = Enum.AutomaticSize.Y,
 				ScrollingDirection = Enum.ScrollingDirection.Y,
 				ScrollBarThickness = 2,
 				Theme = { ScrollBarImageColor3 = "BorderLight" },
 				Parent = Page,
-			}, { list(12), padding(8, 4, 12, 1) })
+			}, { list(18), padding(12, 4, 14, 0) })
 		end
 		local LeftColumn, RightColumn = column(true), column(false)
 
@@ -2134,10 +2013,8 @@ function Library:CreateWindow(info)
 
 		local function paint()
 			local T = Library.Theme
-			Button.BackgroundTransparency = selected and 0 or 1
 			Bar.Visible = selected
-			Label.TextColor3 = selected and T.Text or T.SubText
-			Number.TextColor3 = selected and T.Accent or T.Muted
+			Button.TextColor3 = selected and T.Text or T.SubText
 		end
 		table.insert(ThemeCallbacks, paint)
 		paint()
@@ -2153,7 +2030,6 @@ function Library:CreateWindow(info)
 			for _, other in ipairs(Window.Tabs) do
 				other._setSelected(other == Tab)
 			end
-			Header.Text = name
 		end
 
 		function Tab._setSelected(state)
@@ -2164,7 +2040,7 @@ function Library:CreateWindow(info)
 
 		Button.MouseEnter:Connect(function()
 			if not selected then
-				Label.TextColor3 = Library.Theme.Text
+				Button.TextColor3 = Library.Theme.Text
 			end
 		end)
 		Button.MouseLeave:Connect(paint)
@@ -2203,25 +2079,26 @@ function Library:Notify(title, description, duration)
 		Size = UDim2.new(1, 0, 0, 0),
 		Parent = self.NotifyHolder,
 	})
+	-- Flat card: black edge, accent strip down the left, title over the message.
 	local Card = create("Frame", {
 		Position = UDim2.fromOffset(300, 0),
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Theme = { BackgroundColor3 = "Background" },
 		Parent = Slot,
-	}, { corner(), stroke("Border") })
-	create("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 4, 0.5, 0), Size = UDim2.new(0, 3, 1, -16), Theme = { BackgroundColor3 = "Accent" }, Parent = Card }, { corner(2) })
+	}, { stroke() })
+	create("Frame", { Size = UDim2.new(0, 2, 1, 0), Theme = { BackgroundColor3 = "Accent" }, Parent = Card })
 	local Body = create("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(12, 9),
+		Position = UDim2.fromOffset(12, 8),
 		Size = UDim2.new(1, -22, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Parent = Card,
-	}, { list(2), padding(0, 0, 12, 0) })
+	}, { list(2), padding(0, 0, 8, 0) })
 	text({
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		FontFace = FONT_SEMI,
+		FontFace = FONT_MEDIUM,
 		Text = tostring(title),
 		TextWrapped = true,
 		LayoutOrder = 1,
@@ -2237,19 +2114,10 @@ function Library:Notify(title, description, duration)
 		Theme = { TextColor3 = "SubText" },
 		Parent = Body,
 	})
-	local Progress = create("Frame", {
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 12, 1, -4),
-		Size = UDim2.new(1, -24, 0, 2),
-		Theme = { BackgroundColor3 = "Accent" },
-		Parent = Card,
-	}, { corner(1) })
-
 	-- The slot grows to the card's height so the stack slides instead of jumping.
 	task.defer(function()
 		tween(Slot, { Size = UDim2.new(1, 0, 0, Card.AbsoluteSize.Y) })
 		tween(Card, { Position = UDim2.fromOffset(0, 0) }, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out))
-		tween(Progress, { Size = UDim2.new(0, 0, 0, 2) }, TweenInfo.new(duration, Enum.EasingStyle.Linear))
 	end)
 	task.delay(duration, function()
 		tween(Card, { Position = UDim2.fromOffset(300, 0) }, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)).Completed:Wait()
@@ -2438,13 +2306,6 @@ function Library:BuildSettingsTab(window, name)
 		Tooltip = "While dragging, move an outline and drop the window on release.",
 		Callback = function(enabled)
 			Library.OutlineDrag = enabled
-		end,
-	})
-	Menu:AddToggle("WindowGlow", {
-		Text = "Window glow",
-		Default = self.GlowEnabled,
-		Callback = function(enabled)
-			Library:SetGlow(enabled)
 		end,
 	})
 	Menu:AddDropdown("AccentColor", {
