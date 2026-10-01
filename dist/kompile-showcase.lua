@@ -29,7 +29,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "5.1.0",
+	Version = "5.2.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -2171,6 +2171,9 @@ function Library:_configPath(name)
 	return self.Folder .. "/configs/" .. name .. ".json"
 end
 
+-- Configs work like Linoria's SaveManager: a file per config holding every option (those created with
+-- Save = false are left out), an explicit create / overwrite / load, and an autoload name.
+-- File layout: { objects = { { type = "Toggle", idx = "MyToggle", value = true }, ... } }.
 function Library:SaveConfig(name)
 	if not hasFileApi() then
 		return false, "Your executor can't save files."
@@ -2179,20 +2182,37 @@ function Library:SaveConfig(name)
 	if name == "" then
 		return false, "Enter a config name first."
 	end
-	local data = {}
+	local objects = {}
 	for id, option in pairs(self.Options) do
 		if option.Save then
+			local value = option.Value
 			if option.Type == "Keybind" then
-				data[id] = option.Value and option.Value.Name or "None"
-			else
-				data[id] = option.Value
+				value = option.Value and option.Value.Name or "None"
 			end
+			table.insert(objects, { type = option.Type, idx = id, value = value })
 		end
 	end
-	ensureFolder(self.Folder .. "/configs")
-	local ok, err = pcall(writefile, self:_configPath(name), HttpService:JSONEncode(data))
+	table.sort(objects, function(a, b)
+		return tostring(a.idx) < tostring(b.idx)
+	end)
+	local okEncode, encoded = pcall(function()
+		return HttpService:JSONEncode({ objects = objects })
+	end)
+	if not okEncode then
+		return false, "Couldn't encode the config: " .. tostring(encoded)
+	end
+	local path = self:_configPath(name)
+	local ok, err = pcall(function()
+		ensureFolder(self.Folder .. "/configs")
+		writefile(path, encoded)
+	end)
 	if not ok then
-		return false, tostring(err)
+		return false, "Couldn't write the file: " .. tostring(err)
+	end
+	-- Read it back: a save only counts if the file really holds what was written.
+	local okRead, back = pcall(readfile, path)
+	if not okRead or back ~= encoded then
+		return false, "The config file didn't save correctly."
 	end
 	return true, name
 end
@@ -2211,13 +2231,34 @@ function Library:LoadConfig(name)
 	if not ok or type(data) ~= "table" then
 		return false, "That config file is corrupted."
 	end
-	for id, value in pairs(data) do
-		local option = self.Options[id]
-		if option and option.Save then
-			pcall(option.SetValue, option, value)
+	-- { objects = { { idx, value } } }, or the older flat { id = value } files.
+	local entries = data
+	if type(data.objects) == "table" then
+		entries = {}
+		for _, object in ipairs(data.objects) do
+			if type(object) == "table" and object.idx ~= nil then
+				entries[object.idx] = object.value
+			end
 		end
 	end
-	return true
+	-- Settings first, toggles last, so a feature never starts before its own settings are in.
+	local toggles, applied = {}, 0
+	for id, value in pairs(entries) do
+		local option = self.Options[id]
+		if option and option.Save then
+			if option.Type == "Toggle" then
+				toggles[id] = value
+			else
+				pcall(option.SetValue, option, value)
+				applied = applied + 1
+			end
+		end
+	end
+	for id, value in pairs(toggles) do
+		pcall(self.Options[id].SetValue, self.Options[id], value)
+		applied = applied + 1
+	end
+	return true, applied
 end
 
 function Library:DeleteConfig(name)
@@ -2267,8 +2308,14 @@ end
 
 function Library:LoadAutoload()
 	local name = self:GetAutoload()
-	if name and self:LoadConfig(name) then
-		self:Notify("Kompile", "Loaded config \"" .. name .. "\".")
+	if not name then
+		return
+	end
+	local ok, result = self:LoadConfig(name)
+	if ok then
+		self:Notify("Kompile", "Auto loaded config \"" .. name .. "\".")
+	else
+		self:Notify("Kompile", "Failed to load autoload config \"" .. name .. "\": " .. tostring(result))
 	end
 end
 
@@ -2350,68 +2397,92 @@ function Library:BuildSettingsTab(window, name)
 		return Tab
 	end
 
-	local ConfigName = Configs:AddInput("ConfigName", { Text = "Name", Placeholder = "my-config", Save = false })
+	local ConfigName = Configs:AddInput("ConfigName", { Text = "Config name", Placeholder = "my-config", Save = false })
 	local ConfigList = Configs:AddDropdown("ConfigList", {
-		Text = "Saved",
+		Text = "Config list",
 		Values = self:ListConfigs(),
 		Placeholder = "None selected",
 		Save = false,
 	})
-	local AutoloadLabel = Configs:AddLabel("Autoload: " .. (self:GetAutoload() or "none"))
+	local AutoloadLabel = Configs:AddLabel("Current autoload config: " .. (self:GetAutoload() or "none"))
 
 	local function refresh()
 		ConfigList:SetValues(Library:ListConfigs())
 	end
+	local function picked()
+		if not ConfigList.Value then
+			Library:Notify("Kompile", "Pick a config from the list first.")
+			return nil
+		end
+		return ConfigList.Value
+	end
 
 	Configs:AddButton({
-		Text = "Save",
-		Tooltip = "Saves to the name you typed, or overwrites the selected config.",
+		Text = "Create config",
 		Func = function()
-			local target = ConfigName.Value ~= "" and ConfigName.Value or ConfigList.Value
-			local ok, result = Library:SaveConfig(target)
+			if cleanName(ConfigName.Value) == "" then
+				return Library:Notify("Kompile", "Type a config name first.")
+			end
+			local ok, result = Library:SaveConfig(ConfigName.Value)
 			if not ok then
-				return Library:Notify("Kompile", result)
+				return Library:Notify("Kompile", "Failed to create config: " .. tostring(result))
 			end
 			refresh()
 			ConfigList:SetValue(result)
-			Library:Notify("Kompile", "Saved \"" .. result .. "\".")
+			Library:Notify("Kompile", "Created config \"" .. result .. "\".")
 		end,
 	})
 	Configs:AddButton({
-		Text = "Load",
+		Text = "Load config",
 		Func = function()
-			if not ConfigList.Value then
-				return Library:Notify("Kompile", "Pick a config first.")
+			local name = picked()
+			if not name then
+				return
 			end
-			local ok, err = Library:LoadConfig(ConfigList.Value)
-			Library:Notify("Kompile", ok and ("Loaded \"" .. ConfigList.Value .. "\".") or err)
+			local ok, result = Library:LoadConfig(name)
+			Library:Notify("Kompile", ok and ("Loaded config \"" .. name .. "\" (" .. tostring(result) .. " settings).") or ("Failed to load config: " .. tostring(result)))
 		end,
 	})
 	Configs:AddButton({
-		Text = "Delete",
+		Text = "Overwrite config",
 		Func = function()
-			if not ConfigList.Value then
-				return Library:Notify("Kompile", "Pick a config first.")
+			local name = picked()
+			if not name then
+				return
 			end
-			local target = ConfigList.Value
-			local ok, err = Library:DeleteConfig(target)
-			refresh()
-			Library:Notify("Kompile", ok and ("Deleted \"" .. target .. "\".") or err)
-		end,
-	})
-	Configs:AddButton({
-		Text = "Set as autoload",
-		Tooltip = "Loads this config automatically every time Kompile starts in this game.",
-		Func = function()
-			if not ConfigList.Value then
-				return Library:Notify("Kompile", "Pick a config first.")
-			end
-			Library:SetAutoload(ConfigList.Value)
-			AutoloadLabel:SetText("Autoload: " .. ConfigList.Value)
-			Library:Notify("Kompile", "\"" .. ConfigList.Value .. "\" will load automatically.")
+			local ok, result = Library:SaveConfig(name)
+			Library:Notify("Kompile", ok and ("Overwrote config \"" .. name .. "\".") or ("Failed to overwrite config: " .. tostring(result)))
 		end,
 	})
 	Configs:AddButton({ Text = "Refresh list", Func = refresh })
+	Configs:AddButton({
+		Text = "Set as autoload",
+		Func = function()
+			local name = picked()
+			if not name then
+				return
+			end
+			Library:SetAutoload(name)
+			AutoloadLabel:SetText("Current autoload config: " .. name)
+			Library:Notify("Kompile", "\"" .. name .. "\" will load automatically.")
+		end,
+	})
+	Configs:AddButton({
+		Text = "Delete config",
+		Func = function()
+			local name = picked()
+			if not name then
+				return
+			end
+			local ok, err = Library:DeleteConfig(name)
+			if ok and Library:GetAutoload() == name then
+				Library:SetAutoload("")
+				AutoloadLabel:SetText("Current autoload config: none")
+			end
+			refresh()
+			Library:Notify("Kompile", ok and ("Deleted config \"" .. name .. "\".") or ("Failed to delete config: " .. tostring(err)))
+		end,
+	})
 
 	return Tab
 end
