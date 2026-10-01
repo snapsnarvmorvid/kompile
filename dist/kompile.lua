@@ -26,7 +26,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "5.0.0",
+	Version = "5.0.1",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -722,7 +722,7 @@ function Elements:AddToggle(id, opts)
 		local T = Library.Theme
 		local on = option.Value
 		local goals = {
-			[Box] = { BackgroundColor3 = on and T.Accent or T.Field },
+			[Box] = { BackgroundColor3 = on and T.Accent or T.Border },
 			[Label] = { TextColor3 = on and T.Text or T.SubText },
 		}
 		for instance, props in pairs(goals) do
@@ -813,7 +813,7 @@ function Elements:AddSlider(id, opts)
 	local Track = create("Frame", {
 		Position = UDim2.fromOffset(0, 23),
 		Size = UDim2.new(1, 0, 0, 5),
-		Theme = { BackgroundColor3 = "Field" },
+		Theme = { BackgroundColor3 = "Border" },
 		Parent = Holder,
 	}, { stroke() })
 	local Fill = create("Frame", { Theme = { BackgroundColor3 = "Accent" }, Parent = Track })
@@ -1310,7 +1310,7 @@ local function buildKeybindPanel(ScreenGui)
 					AnchorPoint = Vector2.new(0, 0.5),
 					Position = UDim2.fromScale(0, 0.5),
 					Size = UDim2.fromOffset(8, 8),
-					BackgroundColor3 = active and T.Accent or T.Field,
+					BackgroundColor3 = active and T.Accent or T.Border,
 					Parent = Row,
 				}, {
 					create("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = 1, Color = T.Outline }),

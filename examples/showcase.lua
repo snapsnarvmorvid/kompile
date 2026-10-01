@@ -69,7 +69,7 @@ Buttons:AddButton({
 Buttons:AddButton({
 	Text = "Long notification",
 	Func = function()
-		Library:Notify("Heads up", "Longer messages wrap onto multiple lines, and the bar along the bottom counts down until the card slides away.", 8)
+		Library:Notify("Heads up", "Longer messages wrap onto multiple lines, and the card slides away when its time is up.", 8)
 	end,
 })
 
