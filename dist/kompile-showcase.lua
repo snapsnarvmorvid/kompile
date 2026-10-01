@@ -8,7 +8,7 @@
 local Library = (function()
 --[[
 	Kompile UI v5
-	A flat, compact Roblox UI library for the Kompile hub: wordmark and tabs across the top,
+	A flat, compact Roblox UI library for the Kompile hub: wordmark on top, a row of tabs under it,
 	square controls with a 1px black outline, plain groups split by hairlines, lowercase
 	text, feature search and a status bar.
 
@@ -29,7 +29,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "5.0.1",
+	Version = "5.1.0",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -80,7 +80,8 @@ local FONT_MONO = Font.new("rbxasset://fonts/families/RobotoMono.json", Enum.Fon
 
 local RADIUS = 0 -- square everything
 local WINDOW_RADIUS = 0
-local TITLEBAR = 40 -- wordmark, tabs, search
+local TITLEBAR = 36 -- wordmark, search, hide button
+local TABBAR = 28 -- tab row under the title bar
 local STATUSBAR = 26
 
 -- The wordmark, downloaded once into the executor's workspace and shown with getcustomasset.
@@ -1457,8 +1458,8 @@ function Library:CreateWindow(info)
 	info = info or {}
 	local camera = workspace.CurrentCamera
 	local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
-	local width = math.min(info.Width or 820, viewport.X - 24)
-	local height = math.min(info.Height or 560, viewport.Y - 24)
+	local width = math.min(info.Width or 550, viewport.X - 24)
+	local height = math.min(info.Height or 600, viewport.Y - 24)
 
 	self.Title = info.Title or "Kompile"
 	self.ToggleKey = parseKey(info.ToggleKey or "RightShift")
@@ -1487,18 +1488,17 @@ function Library:CreateWindow(info)
 		self.GlowEnabled = enabled
 	end
 
-	-- Title bar: wordmark / subtitle, tabs, then search and the hide button on the right.
+	-- Title bar: wordmark / subtitle on the left, search and the hide button on the right.
 	local TitleBar = create("Frame", {
 		Size = UDim2.new(1, 0, 0, TITLEBAR),
 		Theme = { BackgroundColor3 = "Chrome" },
 		Parent = Main,
 	})
-	create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Outline" }, Parent = TitleBar })
 
 	local Left = create("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(12, 0),
-		Size = UDim2.new(0, 0, 1, -1),
+		Size = UDim2.new(0, 0, 1, 0),
 		AutomaticSize = Enum.AutomaticSize.X,
 		Parent = TitleBar,
 	}, { list(8, true, { VerticalAlignment = Enum.VerticalAlignment.Center }) })
@@ -1507,14 +1507,26 @@ function Library:CreateWindow(info)
 		text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), Text = "/", LayoutOrder = 2, Theme = { TextColor3 = "BorderLight" }, Parent = Left })
 		text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, 16), Text = info.Subtitle or "script hub", LayoutOrder = 3, Theme = { TextColor3 = "SubText" }, Parent = Left })
 	end
-	create("Frame", { BackgroundTransparency = 1, Size = UDim2.fromOffset(10, 1), LayoutOrder = 4, Parent = Left })
-	local TabList = create("Frame", {
+
+	-- Tab row under the title bar: a hairline above it, the black line below.
+	local TabBar = create("Frame", {
+		Position = UDim2.fromOffset(0, TITLEBAR),
+		Size = UDim2.new(1, 0, 0, TABBAR),
+		Theme = { BackgroundColor3 = "Chrome" },
+		Parent = Main,
+	})
+	create("Frame", { Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Divider" }, Parent = TabBar })
+	create("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, 1), Theme = { BackgroundColor3 = "Outline" }, Parent = TabBar })
+	local TabList = create("ScrollingFrame", {
 		BackgroundTransparency = 1,
-		Size = UDim2.new(0, 0, 1, 0),
-		AutomaticSize = Enum.AutomaticSize.X,
-		LayoutOrder = 5,
-		Parent = Left,
-	}, { list(16, true) })
+		Position = UDim2.fromOffset(12, 1),
+		Size = UDim2.new(1, -24, 1, -2),
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.X,
+		ScrollingDirection = Enum.ScrollingDirection.X,
+		ScrollBarThickness = 0,
+		Parent = TabBar,
+	}, { list(18, true) })
 
 	local HideButton = create("TextButton", {
 		AnchorPoint = Vector2.new(1, 0.5),
@@ -1543,7 +1555,7 @@ function Library:CreateWindow(info)
 	local SearchField = create("Frame", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -40, 0.5, 0),
-		Size = UDim2.fromOffset(150, 22),
+		Size = UDim2.fromOffset(130, 22),
 		Theme = { BackgroundColor3 = "Field" },
 		Parent = TitleBar,
 	}, { SearchEdge })
@@ -1578,8 +1590,8 @@ function Library:CreateWindow(info)
 
 	local Pages = create("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, TITLEBAR),
-		Size = UDim2.new(1, 0, 1, -(TITLEBAR + STATUSBAR)),
+		Position = UDim2.fromOffset(0, TITLEBAR + TABBAR),
+		Size = UDim2.new(1, 0, 1, -(TITLEBAR + TABBAR + STATUSBAR)),
 		ClipsDescendants = true,
 		Parent = Main,
 	})
@@ -1968,7 +1980,7 @@ function Library:CreateWindow(info)
 		end)
 	end)
 
-	-- Tabs sit in the title bar: the name, with an accent underline on the open one.
+	-- Tabs sit in their own row under the title bar: the name, with an accent underline on the open one.
 	function Window:AddTab(name)
 		local selected = false
 		local Button = create("TextButton", {
@@ -1997,15 +2009,15 @@ function Library:CreateWindow(info)
 		local function column(left)
 			return create("ScrollingFrame", {
 				BackgroundTransparency = 1,
-				Position = left and UDim2.fromOffset(14, 0) or UDim2.new(0.5, 15, 0, 0),
-				Size = UDim2.new(0.5, -28, 1, 0),
+				Position = left and UDim2.fromOffset(12, 0) or UDim2.new(0.5, 13, 0, 0),
+				Size = UDim2.new(0.5, -24, 1, 0),
 				CanvasSize = UDim2.new(),
 				AutomaticCanvasSize = Enum.AutomaticSize.Y,
 				ScrollingDirection = Enum.ScrollingDirection.Y,
 				ScrollBarThickness = 2,
 				Theme = { ScrollBarImageColor3 = "BorderLight" },
 				Parent = Page,
-			}, { list(18), padding(12, 4, 14, 0) })
+			}, { list(16), padding(12, 4, 14, 0) })
 		end
 		local LeftColumn, RightColumn = column(true), column(false)
 

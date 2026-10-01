@@ -61,7 +61,7 @@ assets/               logo, banner and UI preview
 A compact UI library written for this hub, in the spirit of the classic hand-built menus:
 
 - Flat near-black panels with square corners and a 1px black outline around the window and every control.
-- The kompile wordmark and the tabs across the top; two columns of plain groups whose rows are split by hairlines.
+- A compact 550 × 600 window (pass `Width` / `Height` to `CreateWindow` for another size): the kompile wordmark on top, a row of tabs under it, and two columns of plain groups whose rows are split by hairlines.
 - Everything in lowercase (typed text and player names keep their case; set `Library.Lowercase = false` to turn it off).
 - Square checkboxes that fill purple when on, key names in mono, and flat sliders with mono values.
 - A search box that finds any control on any tab and jumps to it, plus a status bar with a footer you can set (`Library:SetFooter("...")`) and live FPS and ping.
