@@ -94,7 +94,7 @@ return function(Config)
 		Title = "Kompile",
 		Subtitle = GameName,
 		Footer = "Kompile v" .. Settings.Version,
-		ToggleKey = "RightShift",
+		ToggleKey = "RightControl",
 	})
 
 	local Tabs = {
@@ -115,7 +115,7 @@ return function(Config)
 
 	local About = Tabs.Home:AddRightGroupbox("Kompile")
 	About:AddLabel("Version " .. Settings.Version)
-	About:AddLabel("Toggle the menu with Right Shift. You can rebind it in Settings.")
+	About:AddLabel("Toggle the menu with Right Control. You can rebind it in Settings.")
 	About:AddButton({
 		Text = "Copy Discord invite",
 		Func = function()

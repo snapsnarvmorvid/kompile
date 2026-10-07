@@ -10,7 +10,7 @@
 loadstring(game:HttpGet("https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/loader.lua"))()
 ```
 
-Toggle the menu with **Right Shift** (rebind it in Settings). On mobile, tap the **k** button.
+Toggle the menu with **Right Control** (rebind it in Settings). On mobile, tap the **k** button.
 
 **Without GitHub:** paste `dist/kompile.lua` into your executor. It's the whole hub in one file, so nothing is downloaded from the repo. After changing anything in `src/`, `games/`, `scripts/` or `examples/`, rebuild it with `python tools/bundle.py`.
 
@@ -68,7 +68,7 @@ A compact UI library written for this hub, in the spirit of the classic hand-bui
 - One purple accent, used only for what's on or selected, changeable in Settings.
 
 ```lua
-local Window = Library:CreateWindow({ Title = "Kompile", Footer = "v1.0.0", ToggleKey = "RightShift" })
+local Window = Library:CreateWindow({ Title = "Kompile", Footer = "v1.0.0", ToggleKey = "RightControl" })
 local Tab = Window:AddTab("Main")
 local Box = Tab:AddLeftGroupbox("Movement")
 

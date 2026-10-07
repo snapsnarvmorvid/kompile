@@ -30,7 +30,7 @@ local Window = Library:CreateWindow({
 	Title = "Kompile",
 	Subtitle = "UI showcase",
 	Footer = "Kompile UI v" .. Library.Version,
-	ToggleKey = "RightShift",
+	ToggleKey = "RightControl",
 })
 
 local Tabs = {
@@ -141,4 +141,4 @@ Keys:AddLabel("Click a key box to rebind it. Esc clears it.")
 
 Library:BuildSettingsTab(Window)
 
-Library:Notify("Kompile", "Showcase loaded. Right Shift hides the menu.", 5)
+Library:Notify("Kompile", "Showcase loaded. Right Control hides the menu.", 5)

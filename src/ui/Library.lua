@@ -4,7 +4,7 @@
 	square controls with a 1px black outline, plain groups split by hairlines, lowercase
 	text, feature search and a status bar.
 
-	local Window = Library:CreateWindow({ Title = "Kompile", Footer = "v1.0.0", ToggleKey = "RightShift" })
+	local Window = Library:CreateWindow({ Title = "Kompile", Footer = "v1.0.0", ToggleKey = "RightControl" })
 	local Tab = Window:AddTab("Main")
 	local Box = Tab:AddLeftGroupbox("Movement")
 	Box:AddToggle("MyToggle", { Text = "Enabled", Default = false, Callback = function(on) end })
@@ -21,7 +21,7 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {
-	Version = "5.2.0",
+	Version = "5.2.1",
 	Options = {},
 	Unloaded = false,
 	Picking = false,
@@ -1454,7 +1454,7 @@ function Library:CreateWindow(info)
 	local height = math.min(info.Height or 600, viewport.Y - 24)
 
 	self.Title = info.Title or "Kompile"
-	self.ToggleKey = parseKey(info.ToggleKey or "RightShift")
+	self.ToggleKey = parseKey(info.ToggleKey or "RightControl")
 
 	local ScreenGui = create("ScreenGui", {
 		Name = "Kompile",
@@ -2328,7 +2328,7 @@ function Library:BuildSettingsTab(window, name)
 	local Menu = Tab:AddLeftGroupbox("Menu")
 	local MenuKey = Menu:AddKeybind("MenuKeybind", {
 		Text = "Menu key",
-		Default = self.ToggleKey and self.ToggleKey.Name or "RightShift",
+		Default = self.ToggleKey and self.ToggleKey.Name or "RightControl",
 		Mode = "Press",
 		ShowInList = false,
 	})
