@@ -2,6 +2,7 @@
 
   dist/kompile.lua            the full hub: main.lua, the UI library, game modules and script list inlined
   dist/kompile-showcase.lua   the UI showcase with the library inlined
+  dist/kompile-baseplate.lua  the baseplate example with the library inlined
 
 Usage: python tools/bundle.py   (rerun after editing anything in src/, games/, scripts/ or examples/)
 """
@@ -40,14 +41,15 @@ def build_hub():
     write("kompile.lua", "\n".join(parts))
 
 
-def build_showcase():
+def build_example(example, name):
     inline = "local Library = (function()\n" + read("src/ui/Library.lua") + "\nend)()"
-    showcase = read("examples/showcase.lua")
-    bundled, count = re.subn(r"^--#library-start.*?^--#library-end$", lambda _: inline, showcase, count=1, flags=re.M | re.S)
+    source = read(f"examples/{example}")
+    bundled, count = re.subn(r"^--#library-start.*?^--#library-end$", lambda _: inline, source, count=1, flags=re.M | re.S)
     if count != 1:
-        raise SystemExit("Couldn't find the --#library-start/--#library-end block in examples/showcase.lua")
-    write("kompile-showcase.lua", bundled)
+        raise SystemExit(f"Couldn't find the --#library-start/--#library-end block in examples/{example}")
+    write(name, bundled)
 
 
 build_hub()
-build_showcase()
+build_example("showcase.lua", "kompile-showcase.lua")
+build_example("baseplate.lua", "kompile-baseplate.lua")

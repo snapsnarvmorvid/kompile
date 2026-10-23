@@ -36,42 +36,44 @@ local Window = Library:CreateWindow({
 local Tabs = {
 	Controls = Window:AddTab("Controls"),
 	Inputs = Window:AddTab("Inputs"),
+	Visuals = Window:AddTab("Visuals"),
 }
 
---// Controls
-
 local Toggles = Tabs.Controls:AddLeftGroupbox("Toggles")
-Toggles:AddToggle("DemoEnabled", {
-	Text = "Enabled",
-	Default = true,
-	Tooltip = "A plain toggle. Click the row or the switch.",
-})
+Toggles:AddToggle("DemoEnabled", { Text = "Enabled", Default = true })
 Toggles:AddToggle("DemoKeyed", { Text = "With keybind" }):AddKeybind("DemoKeyedKey", { Default = "F" })
 Toggles:AddToggle("DemoHold", { Text = "Hold to activate" }):AddKeybind("DemoHoldKey", { Default = "LeftShift", Mode = "Hold" })
+Toggles:AddToggle("DemoTinted", { Text = "With colour" }):AddColorPicker("DemoTint", { Default = Color3.fromRGB(155, 92, 255) })
+local Combo = Toggles:AddToggle("DemoCombo", { Text = "Colour and key" })
+Combo:AddColorPicker("DemoComboColor", { Default = Color3.fromRGB(62, 230, 208) })
+Combo:AddKeybind("DemoComboKey", { Default = "V" })
 
-local Buttons = Tabs.Controls:AddLeftGroupbox("Buttons")
+local Buttons = Tabs.Controls:AddLeftGroupbox("Buttons and labels")
 local clicks = 0
-local ClickLabel = Buttons:AddLabel("Button clicked 0 times.")
+local ClickLabel = Buttons:AddLabel("Clicks: 0")
 Buttons:AddButton({
 	Text = "Click me",
 	Func = function()
 		clicks = clicks + 1
-		ClickLabel:SetText(("Button clicked %d time%s."):format(clicks, clicks == 1 and "" or "s"))
+		ClickLabel:SetText("Clicks: " .. clicks)
 	end,
 })
+Buttons:AddDivider()
 Buttons:AddButton({
 	Text = "Send notification",
-	Tooltip = "Notifications stack in the bottom-right corner.",
 	Func = function()
-		Library:Notify("Kompile", "This is a notification.", 4)
+		Library:Notify("Kompile", "Notification", 4)
 	end,
 })
 Buttons:AddButton({
 	Text = "Long notification",
 	Func = function()
-		Library:Notify("Heads up", "Longer messages wrap onto multiple lines, and the card slides away when its time is up.", 8)
+		Library:Notify("Kompile", "A longer notification message that wraps onto a second line.", 8)
 	end,
 })
+Buttons:AddDivider("Labels")
+Buttons:AddLabel("Plain label")
+Buttons:AddLabel("<b>Bold</b>  <font color=\"#9b5cff\">Accent</font>  <i>Italic</i>")
 
 local Sliders = Tabs.Controls:AddRightGroupbox("Sliders")
 Sliders:AddSlider("DemoVolume", { Text = "Volume", Min = 0, Max = 100, Default = 72, Suffix = "%" })
@@ -81,42 +83,50 @@ Sliders:AddSlider("DemoCount", { Text = "Items", Min = 1, Max = 10, Default = 4 
 local Dropdowns = Tabs.Controls:AddRightGroupbox("Dropdowns")
 Dropdowns:AddDropdown("DemoMode", { Text = "Mode", Values = { "Legit", "Balanced", "Rage" }, Default = 2 })
 Dropdowns:AddDropdown("DemoFruit", {
-	Text = "Searchable",
+	Text = "Fruit",
 	Values = { "Apple", "Banana", "Cherry", "Dragonfruit", "Grape", "Kiwi", "Lemon", "Mango", "Orange", "Peach", "Pear", "Plum" },
-	Searchable = true,
 	Placeholder = "Pick a fruit",
+	AllowNull = true,
+})
+Dropdowns:AddDropdown("DemoTargets", {
+	Text = "Targets",
+	Values = { "Players", "Mobs", "Bosses", "Chests", "NPCs" },
+	Multi = true,
+	Default = { "Mobs", "Bosses" },
 })
 
---// Inputs
-
 local Text = Tabs.Inputs:AddLeftGroupbox("Text input")
-Text:AddInput("DemoName", { Text = "Name", Placeholder = "Type and press Enter", Finished = true })
-Text:AddInput("DemoAmount", { Text = "Amount (numbers only)", Placeholder = "0", Numeric = true })
+Text:AddInput("DemoName", { Text = "Name", Placeholder = "Name", Finished = true })
+Text:AddInput("DemoAmount", { Text = "Amount", Placeholder = "0", Numeric = true })
+Text:AddInput("DemoPlain", { Placeholder = "No title" })
 
 local Live = Tabs.Inputs:AddLeftGroupbox("Live values")
 local LiveLabel = Live:AddLabel("")
 local function refreshLive()
+	local targets = {}
+	for name in pairs(Options.DemoTargets.Value) do
+		table.insert(targets, name)
+	end
+	table.sort(targets)
 	LiveLabel:SetText(table.concat({
 		"Enabled: " .. tostring(Options.DemoEnabled.Value),
 		"Volume: " .. tostring(Options.DemoVolume.Value) .. "%",
 		"Mode: " .. tostring(Options.DemoMode.Value),
 		"Fruit: " .. tostring(Options.DemoFruit.Value or "none"),
+		"Targets: " .. (#targets > 0 and table.concat(targets, ", ") or "none"),
 		"Name: " .. (Options.DemoName.Value ~= "" and Options.DemoName.Value or "(empty)"),
+		"Accent: " .. Options.DemoAccentPreview.Value:ToHex():upper(),
 	}, "\n"))
 end
-for _, id in ipairs({ "DemoEnabled", "DemoVolume", "DemoMode", "DemoFruit", "DemoName" }) do
-	Options[id]:OnChanged(refreshLive)
-end
-refreshLive()
 
 local Keys = Tabs.Inputs:AddRightGroupbox("Keybinds")
-local KeyLabel = Keys:AddLabel("Press G, hold H, or tap J.")
+local KeyLabel = Keys:AddLabel("Keys: G, H, J")
 Keys:AddKeybind("DemoToggleKey", {
 	Text = "Toggle mode",
 	Default = "G",
 	Mode = "Toggle",
 	Callback = function(state)
-		KeyLabel:SetText("Toggle mode is now " .. (state and "on." or "off."))
+		KeyLabel:SetText("Toggle: " .. (state and "on" or "off"))
 	end,
 })
 Keys:AddKeybind("DemoHoldKey2", {
@@ -124,7 +134,7 @@ Keys:AddKeybind("DemoHoldKey2", {
 	Default = "H",
 	Mode = "Hold",
 	Callback = function(held)
-		KeyLabel:SetText(held and "Holding H…" or "Released H.")
+		KeyLabel:SetText(held and "Hold: held" or "Hold: released")
 	end,
 })
 Keys:AddKeybind("DemoPressKey", {
@@ -132,13 +142,124 @@ Keys:AddKeybind("DemoPressKey", {
 	Default = "J",
 	Mode = "Press",
 	Callback = function()
-		Library:Notify("Kompile", "You pressed the Press-mode key.", 3)
+		Library:Notify("Kompile", "J pressed", 3)
 	end,
 })
-Keys:AddLabel("Click a key box to rebind it. Esc clears it.")
 
---// Settings: menu keybind, accent color, UI scale, configs
+local Colors = Tabs.Inputs:AddRightGroupbox("Colour pickers")
+Colors:AddColorPicker("DemoAccentPreview", { Text = "Accent preview", Default = Library.Theme.Accent })
+Colors:AddColorPicker("DemoGlass", { Text = "With transparency", Default = Color3.fromRGB(255, 111, 181), Transparency = 0.3 })
+Colors:AddLabel("Enemy"):AddColorPicker("DemoEnemyColor", { Default = Color3.fromRGB(255, 60, 60), Title = "Enemy colour" })
+Colors:AddLabel("Team"):AddColorPicker("DemoTeamColor", { Default = Color3.fromRGB(60, 180, 255), Title = "Team colour" })
+Colors:AddButton({
+	Text = "Use preview as UI accent",
+	Func = function()
+		Library:SetTheme({ Accent = Options.DemoAccentPreview.Value })
+	end,
+})
+
+for _, id in ipairs({ "DemoEnabled", "DemoVolume", "DemoMode", "DemoFruit", "DemoTargets", "DemoName", "DemoAccentPreview" }) do
+	Options[id]:OnChanged(refreshLive)
+end
+refreshLive()
+
+local EspBox = Tabs.Visuals:AddLeftGroupbox("ESP preview")
+local Preview = EspBox:AddESPPreview({ Tabs = { "Enemy", "Team" }, Height = 260 })
+Preview:Set("Team", { Colour = Color3.fromRGB(60, 180, 255) })
+
+local EspOptions = Tabs.Visuals:AddRightGroupbox("ESP options")
+EspOptions:AddDropdown("DemoEspTab", { Text = "Editing", Values = { "Enemy", "Team" }, Default = "Enemy" })
+local function editing()
+	return Preview:GetTab(Options.DemoEspTab.Value or "Enemy")
+end
+Options.DemoEspTab:OnChanged(function(name)
+	local tab = Preview:GetTab(name or "Enemy")
+	if tab then
+		tab:Select()
+	end
+end)
+EspOptions:AddToggle("DemoEspOutline", { Text = "Outline", Default = true }):AddColorPicker("DemoEspOutlineColor", {
+	Default = Color3.fromRGB(255, 0, 0),
+	Title = "Outline colour",
+	Callback = function(color)
+		editing():SetColour(color)
+	end,
+})
+Options.DemoEspOutline:OnChanged(function(on)
+	editing():SetOutline(on)
+end)
+for _, part in ipairs({ { "Name", "Name" }, { "Distance", "Distance" }, { "HealthBg", "Health bar" }, { "Tracer", "Tracer" } }) do
+	EspOptions:AddToggle("DemoEsp" .. part[1], {
+		Text = part[2],
+		Default = part[1] ~= "Tracer",
+		Callback = function(on)
+			editing():Set({ [part[1]] = on })
+		end,
+	})
+end
+Preview:OnTabChanged(function(name, tab)
+	Options.DemoEspTab:SetValue(name)
+	Options.DemoEspOutline:SetValue(tab._show.Outline)
+	Options.DemoEspOutlineColor:SetValue(tab.Colour)
+	for _, part in ipairs({ "Name", "Distance", "HealthBg", "Tracer" }) do
+		Options["DemoEsp" .. part]:SetValue(tab._show[part] ~= false)
+	end
+end)
+EspOptions:AddSlider("DemoEspHealth", {
+	Text = "Health",
+	Min = 0,
+	Max = 100,
+	Default = 72,
+	Suffix = "%",
+	Callback = function(value)
+		editing():SetHealth(value / 100)
+	end,
+})
+EspOptions:AddInput("DemoEspName", {
+	Text = "Name tag",
+	Placeholder = "Player name",
+	Callback = function(value)
+		editing():SetText("Name", value ~= "" and value or "Player")
+	end,
+})
+EspOptions:AddInput("DemoEspUser", {
+	Text = "Avatar user id",
+	Placeholder = "UserId",
+	Numeric = true,
+	Finished = true,
+	Callback = function(value)
+		if tonumber(value) then
+			Preview:SetUser(tonumber(value))
+		end
+	end,
+})
+
+local Custom = Tabs.Visuals:AddLeftGroupbox("Custom row")
+local Canvas = Custom:AddCustom(54)
+local Strip = Instance.new("Frame")
+Strip.Size = UDim2.fromScale(1, 1)
+Strip.BackgroundColor3 = Color3.new(1, 1, 1)
+Strip.BorderSizePixel = 0
+Strip.Parent = Canvas
+local StripCorner = Instance.new("UICorner")
+StripCorner.CornerRadius = UDim.new(0, 8)
+StripCorner.Parent = Strip
+local StripGradient = Instance.new("UIGradient")
+StripGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(155, 92, 255)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 111, 181)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(62, 230, 208)),
+})
+StripGradient.Parent = Strip
+local StripText = Instance.new("TextLabel")
+StripText.BackgroundTransparency = 1
+StripText.Size = UDim2.fromScale(1, 1)
+StripText.FontFace = Font.new("rbxasset://fonts/families/BuilderSans.json", Enum.FontWeight.Bold)
+StripText.TextSize = 15
+StripText.TextColor3 = Color3.new(1, 1, 1)
+StripText.Text = "Custom row"
+StripText.Parent = Strip
 
 Library:BuildSettingsTab(Window)
 
-Library:Notify("Kompile", "Showcase loaded. Right Control hides the menu.", 5)
+Library:Notify("Kompile", "Loaded. Right Control toggles the menu.", 5)
