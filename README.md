@@ -45,7 +45,6 @@ games/registry.lua    universe ID -> game module
 games/_template.lua   starting point for a new game module
 scripts/registry.lua  scripts shown in the Scripts tab
 examples/showcase.lua every UI element in one window
-examples/baseplate.lua a small working hub for any Baseplate (movement, fly, lighting, parts)
 dist/                 standalone builds (no GitHub needed), made by tools/bundle.py
 tools/bundle.py       rebuilds dist/
 assets/               logo, banner and UI preview
@@ -57,7 +56,7 @@ assets/               logo, banner and UI preview
   <img src="assets/preview.png" alt="Kompile UI preview" width="720">
 </p>
 
-**Try it:** paste `dist/kompile-showcase.lua` (every element) or `dist/kompile-baseplate.lua` (a small working hub for any Baseplate) into your executor. Both have the library built in, so they run without anything uploaded. After editing `src/ui/Library.lua` or anything in `examples/`, rebuild them with `python tools/bundle.py`.
+**Try it:** paste `dist/kompile-showcase.lua` into your executor. It has the library built in, so it runs without anything uploaded. After editing `src/ui/Library.lua` or `examples/showcase.lua`, rebuild it with `python tools/bundle.py`.
 
 A compact UI library written for this hub, in the spirit of the classic hand-built menus:
 
