@@ -2864,7 +2864,7 @@ local function newGroupbox(tab, column, title)
 		Parent = Outer,
 	}, { list(6) })
 
-	local group = setmetatable({ Container = Content, Order = 0, Rows = 0, Tab = tab, Column = column }, Elements)
+	local group = setmetatable({ Container = Content, Order = 0, Rows = 0, Tab = tab, Column = column, Title = title or "" }, Elements)
 	function group.Expand() end
 	return group
 end
