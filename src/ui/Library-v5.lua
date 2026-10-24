@@ -4291,14 +4291,6 @@ function Library:BuildSettingsTab(window, name)
 			Library:SetWatermark(enabled)
 		end,
 	})
-	Menu:AddDropdown("AccentPreset", {
-		Text = "Accent",
-		Values = sortedKeys(self.AccentPresets),
-		Default = "Gold",
-		Callback = function(value)
-			Library:SetTheme({ Accent = Library.AccentPresets[value] })
-		end,
-	})
 	Menu:AddDropdown("UIScale", {
 		Text = "UI scale",
 		Values = { "75%", "90%", "100%", "110%", "125%" },
