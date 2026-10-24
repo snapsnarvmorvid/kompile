@@ -74,7 +74,7 @@ local LOGO_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main
 local LOGO_PATH = "Kompile/assets/wordmark.png"
 local LOGO_RATIO = 335 / 80
 local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim_purple.png"
-local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_v2.png"
+local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_purple_v1.png"
 local LOGO_ANIM = { Width = 251, Height = 64, Columns = 4, Frames = 60, Fps = 20 }
 local ICON_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/icon_anim.png"
 local ICON_ANIM_PATH = "Kompile/assets/icon_anim_v1.png"
