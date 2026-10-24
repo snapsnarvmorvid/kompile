@@ -40,11 +40,13 @@ local Library = {
 		Text = Color3.fromHex("e9e6f5"),
 		SubText = Color3.fromHex("aba6bd"),
 		Muted = Color3.fromHex("7a748c"),
-		Accent = Color3.fromHex("9b5cff"),
+		Accent = Color3.fromHex("a374ff"),
 	},
 	AccentPresets = {
-		Violet = Color3.fromHex("9b5cff"),
+		Purple = Color3.fromHex("a374ff"),
 	},
+	ForceAccent = true,
+	ForceGold = true,
 }
 
 local Registry = {}
@@ -71,9 +73,12 @@ local STATUSBAR = 26
 local LOGO_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark.png"
 local LOGO_PATH = "Kompile/assets/wordmark.png"
 local LOGO_RATIO = 335 / 80
-local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim_violet.png"
-local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_violet_v1.png"
+local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim_purple.png"
+local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_v2.png"
 local LOGO_ANIM = { Width = 251, Height = 64, Columns = 4, Frames = 60, Fps = 20 }
+local ICON_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/icon_anim.png"
+local ICON_ANIM_PATH = "Kompile/assets/icon_anim_v1.png"
+local ICON_ANIM = { Width = 96, Height = 96, Columns = 10, Frames = 60, Fps = 20 }
 
 local TWEEN = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_FAST = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -514,26 +519,27 @@ end
 
 local AnimatedLogos = {}
 local animConnection
-local animFrame, animClock = -1, 0
+local animTick, animClock = -1, 0
 local function stepLogos(dt)
 	animClock += dt or 0
-	local frame = math.floor(animClock * LOGO_ANIM.Fps) % LOGO_ANIM.Frames
-	if frame == animFrame then
+	local beat = math.floor(animClock * 20)
+	if beat == animTick then
 		return
 	end
-	animFrame = frame
-	local offset = Vector2.new((frame % LOGO_ANIM.Columns) * LOGO_ANIM.Width, math.floor(frame / LOGO_ANIM.Columns) * LOGO_ANIM.Height)
+	animTick = beat
 	for i = #AnimatedLogos, 1, -1 do
-		local image = AnimatedLogos[i]
+		local entry = AnimatedLogos[i]
+		local image, sheet = entry[1], entry[2]
 		if image.Parent == nil then
 			table.remove(AnimatedLogos, i)
 		elseif image.Visible then
-			image.ImageRectOffset = offset
+			local frame = math.floor(animClock * sheet.Fps) % sheet.Frames
+			image.ImageRectOffset = Vector2.new((frame % sheet.Columns) * sheet.Width, math.floor(frame / sheet.Columns) * sheet.Height)
 		end
 	end
 end
-local function animateLogo(image)
-	table.insert(AnimatedLogos, image)
+local function animateLogo(image, sheet)
+	table.insert(AnimatedLogos, { image, sheet or LOGO_ANIM })
 	if not animConnection then
 		animConnection = RunService.RenderStepped:Connect(stepLogos)
 		table.insert(Connections, animConnection)
@@ -565,7 +571,7 @@ local function buildLogo(parent, height, layoutOrder)
 				Size = UDim2.fromOffset(math.floor(tall * LOGO_ANIM.Width / LOGO_ANIM.Height + 0.5), tall),
 				Parent = Holder,
 			})
-			animateLogo(Image)
+			animateLogo(Image, LOGO_ANIM)
 			return
 		end
 		local asset = wordmarkAsset()
@@ -586,10 +592,38 @@ end
 Library.BuildLogo = function(parent, height, layoutOrder)
 	return buildLogo(parent, height, layoutOrder)
 end
+local function buildIcon(parent, size, fallback)
+	task.spawn(function()
+		local animated = cachedAsset(ICON_ANIM_URL, ICON_ANIM_PATH)
+		if not (animated and parent.Parent) then
+			return
+		end
+		if fallback then
+			fallback.TextTransparency = 1
+		end
+		local Image = create("ImageLabel", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(size, size),
+			BackgroundTransparency = 1,
+			Image = animated,
+			ImageRectSize = Vector2.new(ICON_ANIM.Width, ICON_ANIM.Height),
+			ImageRectOffset = Vector2.zero,
+			ScaleType = Enum.ScaleType.Fit,
+			Parent = parent,
+		})
+		animateLogo(Image, ICON_ANIM)
+	end)
+end
+Library.BuildIcon = function(parent, size)
+	return buildIcon(parent, size)
+end
 
 function Library:SetTheme(changes)
 	for key, value in pairs(changes) do
-		self.Theme[key] = value
+		if key ~= "Accent" then
+			self.Theme[key] = value
+		end
 	end
 	for _, entry in ipairs(Registry) do
 		for property, themeKey in pairs(entry[2]) do
@@ -3147,14 +3181,14 @@ function Library:SetWatermark(enabled)
 	end
 end
 
-local SHEEN = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.new(0.62, 0.56, 0.74)),
-	ColorSequenceKeypoint.new(0.4, Color3.new(0.97, 0.94, 1)),
+local ACCENT_SHEEN = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.new(0.5, 0.32, 0.74)),
+	ColorSequenceKeypoint.new(0.4, Color3.new(0.92, 0.86, 0.97)),
 	ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1)),
-	ColorSequenceKeypoint.new(0.6, Color3.new(0.97, 0.94, 1)),
-	ColorSequenceKeypoint.new(1, Color3.new(0.52, 0.46, 0.66)),
+	ColorSequenceKeypoint.new(0.6, Color3.new(0.92, 0.86, 0.97)),
+	ColorSequenceKeypoint.new(1, Color3.new(0.44, 0.27, 0.68)),
 })
-local SHEEN_SWAY = TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+local ACCENT_SWAY = TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local sheenStarted = false
 local function startSheen()
 	if sheenStarted then
@@ -3197,10 +3231,10 @@ local function startSheen()
 		end
 		local gradient = Instance.new("UIGradient")
 		gradient.Name = "KompileSheen"
-		gradient.Color = SHEEN
+		gradient.Color = ACCENT_SHEEN
 		gradient.Rotation = base - 14
 		gradient.Parent = inst
-		local sway = TweenService:Create(gradient, SHEEN_SWAY, { Rotation = base + 14 })
+		local sway = TweenService:Create(gradient, ACCENT_SWAY, { Rotation = base + 14 })
 		sway:Play()
 		sheens[inst] = { gradient = gradient, tween = sway }
 	end
@@ -3918,6 +3952,7 @@ function Library:CreateWindow(info)
 			Parent = ScreenGui,
 		}, { corner(12), stroke("BorderLight") })
 		pressScale(MobileButton)
+		buildIcon(MobileButton, 34, MobileButton)
 		Library.MobileButton = MobileButton
 		MobileButton.MouseButton1Click:Connect(function()
 			Window:Toggle()
