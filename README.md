@@ -45,9 +45,8 @@ src/ui/Library.lua    Kompile UI, the UI library
 games/registry.lua    universe ID -> game module
 games/_template.lua   starting point for a new game module
 scripts/registry.lua  scripts shown in the Scripts tab
-examples/showcase.lua every UI element in one window
 src/ui/Library-v5.lua Kompile UI v5, the newer library (colour pickers, ESP preview, custom rows)
-examples/showcase-v5.lua every v5 element in one window
+examples/showcase.lua every v5 element in one window
 examples/baseplate.lua a small working hub for any Baseplate, built on v5
 dist/                 standalone builds (no GitHub needed), made by tools/bundle.py
 tools/bundle.py       rebuilds dist/
@@ -60,9 +59,9 @@ assets/               logo, banner and UI preview
   <img src="assets/preview.png" alt="Kompile UI preview" width="720">
 </p>
 
-**Try it:** paste `dist/kompile-showcase.lua` into your executor. It has the library built in, so it runs without anything uploaded. After editing `src/ui/Library.lua` or `examples/showcase.lua`, rebuild it with `python tools/bundle.py`.
+**Try it:** paste `dist/kompile-showcase.lua` (every element) or `dist/kompile-baseplate.lua` (movement, fly, lighting and a part builder for any Baseplate) into your executor. Both are built on Kompile UI v5 (`src/ui/Library-v5.lua`) and have it built in, so they run without anything uploaded. After editing the library or an example, rebuild them with `python tools/bundle.py`.
 
-**Kompile UI v5:** paste `dist/kompile-showcase-v5.lua` (every element) or `dist/kompile-baseplate.lua` (movement, fly, lighting and a part builder for any Baseplate). Both have `src/ui/Library-v5.lua` built in. The v5 library has its own file so scripts that already load `src/ui/Library.lua` keep working unchanged.
+The v5 library has its own file so scripts that already load `src/ui/Library.lua` keep working unchanged. To use v5 in your own script, load `src/ui/Library-v5.lua` instead.
 
 A compact UI library written for this hub, in the spirit of the classic hand-built menus:
 

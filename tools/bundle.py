@@ -1,9 +1,8 @@
 """Builds standalone scripts in dist/ that run without the repo on GitHub:
 
   dist/kompile.lua            the full hub: main.lua, the UI library, game modules and script list inlined
-  dist/kompile-showcase.lua   the UI showcase with the library inlined
-  dist/kompile-showcase-v5.lua   the v5 showcase with src/ui/Library-v5.lua inlined
-  dist/kompile-baseplate.lua     the v5 baseplate example with src/ui/Library-v5.lua inlined
+  dist/kompile-showcase.lua   the UI showcase with src/ui/Library-v5.lua inlined
+  dist/kompile-baseplate.lua  the baseplate example with src/ui/Library-v5.lua inlined
 
 Usage: python tools/bundle.py   (rerun after editing anything in src/, games/, scripts/ or examples/)
 """
@@ -52,7 +51,7 @@ def build_example(example, name, library="src/ui/Library.lua"):
 
 
 build_hub()
-build_example("showcase.lua", "kompile-showcase.lua")
-# Kompile UI v5 lives at its own path: the game scripts load src/ui/Library.lua live, so that file must stay the old library.
-build_example("showcase-v5.lua", "kompile-showcase-v5.lua", "src/ui/Library-v5.lua")
+# The examples use Kompile UI v5. It lives at its own path: the game scripts load src/ui/Library.lua live, so that file
+# must stay the old library.
+build_example("showcase.lua", "kompile-showcase.lua", "src/ui/Library-v5.lua")
 build_example("baseplate.lua", "kompile-baseplate.lua", "src/ui/Library-v5.lua")
