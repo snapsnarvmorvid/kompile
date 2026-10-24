@@ -477,7 +477,11 @@ local function flash(target)
 end
 
 local assetCache = {}
+local assetLoading = {}
 local function cachedAsset(url, path)
+	while assetLoading[path] do
+		task.wait()
+	end
 	if assetCache[path] ~= nil then
 		return assetCache[path] or nil
 	end
@@ -487,6 +491,7 @@ local function cachedAsset(url, path)
 		or type(isfile) ~= "function" or type(isfolder) ~= "function" or type(makefolder) ~= "function" then
 		return nil
 	end
+	assetLoading[path] = true
 	local ok, id = pcall(function()
 		local cached = isfile(path) and readfile(path) or ""
 		if cached:sub(2, 4) ~= "PNG" then
@@ -503,6 +508,7 @@ local function cachedAsset(url, path)
 		end
 		return getAsset(path)
 	end)
+	assetLoading[path] = nil
 	if ok and type(id) == "string" and id ~= "" then
 		assetCache[path] = id
 	end
@@ -4293,10 +4299,10 @@ function Library:BuildSettingsTab(window, name)
 			Library:SetWatermark(enabled)
 		end,
 	})
-	Menu:AddDropdown("AccentColor", {
+	Menu:AddDropdown("AccentPreset", {
 		Text = "Accent",
 		Values = sortedKeys(self.AccentPresets),
-		Default = self.AccentPresets.Gold and "Gold" or "Violet",
+		Default = "Gold",
 		Callback = function(value)
 			Library:SetTheme({ Accent = Library.AccentPresets[value] })
 		end,
