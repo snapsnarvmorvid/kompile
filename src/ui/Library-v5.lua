@@ -32,12 +32,11 @@ local Library = {
 		Text = Color3.fromHex("e9e6f5"),
 		SubText = Color3.fromHex("aba6bd"),
 		Muted = Color3.fromHex("7a748c"),
-		Accent = Color3.fromHex("f5c451"),
+		Accent = Color3.fromHex("9b5cff"),
 	},
 	AccentPresets = {
-		Gold = Color3.fromHex("f5c451"),
+		Violet = Color3.fromHex("9b5cff"),
 	},
-	ForceGold = true,
 }
 
 local Registry = {}
@@ -64,8 +63,8 @@ local STATUSBAR = 26
 local LOGO_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark.png"
 local LOGO_PATH = "Kompile/assets/wordmark.png"
 local LOGO_RATIO = 335 / 80
-local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim.png"
-local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_v1.png"
+local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim_violet.png"
+local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_violet_v1.png"
 local LOGO_ANIM = { Width = 251, Height = 64, Columns = 4, Frames = 60, Fps = 20 }
 
 local TWEEN = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -464,7 +463,11 @@ local function flash(target)
 end
 
 local assetCache = {}
+local assetLoading = {}
 local function cachedAsset(url, path)
+	while assetLoading[path] do
+		task.wait()
+	end
 	if assetCache[path] ~= nil then
 		return assetCache[path] or nil
 	end
@@ -474,6 +477,7 @@ local function cachedAsset(url, path)
 		or type(isfile) ~= "function" or type(isfolder) ~= "function" or type(makefolder) ~= "function" then
 		return nil
 	end
+	assetLoading[path] = true
 	local ok, id = pcall(function()
 		local cached = isfile(path) and readfile(path) or ""
 		if cached:sub(2, 4) ~= "PNG" then
@@ -490,6 +494,7 @@ local function cachedAsset(url, path)
 		end
 		return getAsset(path)
 	end)
+	assetLoading[path] = nil
 	if ok and type(id) == "string" and id ~= "" then
 		assetCache[path] = id
 	end
@@ -576,9 +581,7 @@ end
 
 function Library:SetTheme(changes)
 	for key, value in pairs(changes) do
-		if key ~= "Accent" then
-			self.Theme[key] = value
-		end
+		self.Theme[key] = value
 	end
 	for _, entry in ipairs(Registry) do
 		for property, themeKey in pairs(entry[2]) do
@@ -3136,20 +3139,20 @@ function Library:SetWatermark(enabled)
 	end
 end
 
-local GOLD_SHEEN = ColorSequence.new({
-	ColorSequenceKeypoint.new(0, Color3.new(0.72, 0.6, 0.38)),
-	ColorSequenceKeypoint.new(0.4, Color3.new(1, 0.96, 0.88)),
+local SHEEN = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.new(0.62, 0.56, 0.74)),
+	ColorSequenceKeypoint.new(0.4, Color3.new(0.97, 0.94, 1)),
 	ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1)),
-	ColorSequenceKeypoint.new(0.6, Color3.new(1, 0.96, 0.88)),
-	ColorSequenceKeypoint.new(1, Color3.new(0.62, 0.5, 0.29)),
+	ColorSequenceKeypoint.new(0.6, Color3.new(0.97, 0.94, 1)),
+	ColorSequenceKeypoint.new(1, Color3.new(0.52, 0.46, 0.66)),
 })
-local GOLD_SWAY = TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-local goldStarted = false
-local function startGold()
-	if goldStarted then
+local SHEEN_SWAY = TweenInfo.new(2.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+local sheenStarted = false
+local function startSheen()
+	if sheenStarted then
 		return
 	end
-	goldStarted = true
+	sheenStarted = true
 	local sheens = setmetatable({}, { __mode = "k" })
 	local otherGradient = setmetatable({}, { __mode = "k" })
 	local function near(a, b)
@@ -3185,11 +3188,11 @@ local function startGold()
 			base = size.X > size.Y * 4 and 0 or 90
 		end
 		local gradient = Instance.new("UIGradient")
-		gradient.Name = "KompileGoldSheen"
-		gradient.Color = GOLD_SHEEN
+		gradient.Name = "KompileSheen"
+		gradient.Color = SHEEN
 		gradient.Rotation = base - 14
 		gradient.Parent = inst
-		local sway = TweenService:Create(gradient, GOLD_SWAY, { Rotation = base + 14 })
+		local sway = TweenService:Create(gradient, SHEEN_SWAY, { Rotation = base + 14 })
 		sway:Play()
 		sheens[inst] = { gradient = gradient, tween = sway }
 	end
@@ -3220,7 +3223,7 @@ local function startGold()
 			table.insert(list, main)
 			local holder = main.Parent
 			for _, child in ipairs(holder and holder:GetChildren() or {}) do
-				if child ~= main and child:IsA("ScreenGui") and child.Name:sub(1, 7) == "Kompile" and not Library.GoldSkip[child.Name] then
+				if child ~= main and child:IsA("ScreenGui") and child.Name:sub(1, 7) == "Kompile" and not Library.SheenSkip[child.Name] then
 					table.insert(list, child)
 				end
 			end
@@ -3232,7 +3235,7 @@ local function startGold()
 		queue, index, skipped = {}, 1, {}
 		for _, root in ipairs(roots()) do
 			for _, inst in ipairs(root:GetDescendants()) do
-				if Library.GoldSkip[inst.Name] and inst:IsA("GuiObject") then
+				if Library.SheenSkip[inst.Name] and inst:IsA("GuiObject") then
 					table.insert(skipped, inst)
 				end
 				if inst:IsA("GuiObject") or inst:IsA("UIStroke") then
@@ -3272,7 +3275,8 @@ local function startGold()
 		end
 	end)
 end
-Library.GoldSkip = { KompileEspText = true, EspPreview = true }
+Library.SheenSkip = { KompileEspText = true, EspPreview = true }
+Library.GoldSkip = Library.SheenSkip
 
 function Library:CreateWindow(info)
 	info = info or {}
@@ -3292,7 +3296,7 @@ function Library:CreateWindow(info)
 	})
 	parentGui(ScreenGui)
 	self.ScreenGui = ScreenGui
-	startGold()
+	startSheen()
 
 	local Root = create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
