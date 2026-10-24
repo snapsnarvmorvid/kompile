@@ -32,9 +32,10 @@ local Library = {
 		Text = Color3.fromHex("e9e6f5"),
 		SubText = Color3.fromHex("aba6bd"),
 		Muted = Color3.fromHex("7a748c"),
-		Accent = Color3.fromHex("9b5cff"),
+		Accent = Color3.fromHex("f5c451"),
 	},
 	AccentPresets = {
+		Gold = Color3.fromHex("f5c451"),
 		Violet = Color3.fromHex("9b5cff"),
 		Aqua = Color3.fromHex("3ee6d0"),
 		Pink = Color3.fromHex("ff6fb5"),
@@ -68,6 +69,9 @@ local STATUSBAR = 26
 local LOGO_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark.png"
 local LOGO_PATH = "Kompile/assets/wordmark.png"
 local LOGO_RATIO = 335 / 80
+local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim.png"
+local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_v1.png"
+local LOGO_ANIM = { Width = 251, Height = 64, Columns = 4, Frames = 60, Fps = 20 }
 
 local TWEEN = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local TWEEN_FAST = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -464,21 +468,21 @@ local function flash(target)
 	end)
 end
 
-local logoAsset
-local function wordmarkAsset()
-	if logoAsset ~= nil then
-		return logoAsset or nil
+local assetCache = {}
+local function cachedAsset(url, path)
+	if assetCache[path] ~= nil then
+		return assetCache[path] or nil
 	end
-	logoAsset = false
+	assetCache[path] = false
 	local getAsset = getcustomasset or getsynasset
 	if type(getAsset) ~= "function" or type(writefile) ~= "function" or type(readfile) ~= "function"
 		or type(isfile) ~= "function" or type(isfolder) ~= "function" or type(makefolder) ~= "function" then
 		return nil
 	end
 	local ok, id = pcall(function()
-		local cached = isfile(LOGO_PATH) and readfile(LOGO_PATH) or ""
+		local cached = isfile(path) and readfile(path) or ""
 		if cached:sub(2, 4) ~= "PNG" then
-			local data = game:HttpGet(LOGO_URL)
+			local data = game:HttpGet(url)
 			if data:sub(2, 4) ~= "PNG" then
 				return nil
 			end
@@ -487,14 +491,45 @@ local function wordmarkAsset()
 					makefolder(folder)
 				end
 			end
-			writefile(LOGO_PATH, data)
+			writefile(path, data)
 		end
-		return getAsset(LOGO_PATH)
+		return getAsset(path)
 	end)
 	if ok and type(id) == "string" and id ~= "" then
-		logoAsset = id
+		assetCache[path] = id
 	end
-	return logoAsset or nil
+	return assetCache[path] or nil
+end
+local function wordmarkAsset()
+	return cachedAsset(LOGO_URL, LOGO_PATH)
+end
+
+local AnimatedLogos = {}
+local animConnection
+local animFrame, animClock = -1, 0
+local function stepLogos(dt)
+	animClock += dt or 0
+	local frame = math.floor(animClock * LOGO_ANIM.Fps) % LOGO_ANIM.Frames
+	if frame == animFrame then
+		return
+	end
+	animFrame = frame
+	local offset = Vector2.new((frame % LOGO_ANIM.Columns) * LOGO_ANIM.Width, math.floor(frame / LOGO_ANIM.Columns) * LOGO_ANIM.Height)
+	for i = #AnimatedLogos, 1, -1 do
+		local image = AnimatedLogos[i]
+		if image.Parent == nil then
+			table.remove(AnimatedLogos, i)
+		elseif image.Visible then
+			image.ImageRectOffset = offset
+		end
+	end
+end
+local function animateLogo(image)
+	table.insert(AnimatedLogos, image)
+	if not animConnection then
+		animConnection = RunService.RenderStepped:Connect(stepLogos)
+		table.insert(Connections, animConnection)
+	end
 end
 
 local function buildLogo(parent, height, layoutOrder)
@@ -508,6 +543,23 @@ local function buildLogo(parent, height, layoutOrder)
 	local K = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, height), FontFace = FONT_BOLD, TextSize = height + 2, Text = "k", LayoutOrder = 1, Theme = { TextColor3 = "Accent" }, Parent = Holder })
 	local Rest = text({ AutomaticSize = Enum.AutomaticSize.X, Size = UDim2.fromOffset(0, height), FontFace = FONT_BOLD, TextSize = height + 2, Text = "ompile", LayoutOrder = 2, Parent = Holder })
 	task.spawn(function()
+		local animated = cachedAsset(LOGO_ANIM_URL, LOGO_ANIM_PATH)
+		if animated and Holder.Parent then
+			K:Destroy()
+			Rest:Destroy()
+			local tall = math.floor(height * 1.12 + 0.5)
+			local Image = create("ImageLabel", {
+				BackgroundTransparency = 1,
+				Image = animated,
+				ImageRectSize = Vector2.new(LOGO_ANIM.Width, LOGO_ANIM.Height),
+				ImageRectOffset = Vector2.zero,
+				ScaleType = Enum.ScaleType.Fit,
+				Size = UDim2.fromOffset(math.floor(tall * LOGO_ANIM.Width / LOGO_ANIM.Height + 0.5), tall),
+				Parent = Holder,
+			})
+			animateLogo(Image)
+			return
+		end
 		local asset = wordmarkAsset()
 		if asset and Holder.Parent then
 			K:Destroy()
@@ -522,6 +574,9 @@ local function buildLogo(parent, height, layoutOrder)
 		end
 	end)
 	return Holder
+end
+Library.BuildLogo = function(parent, height, layoutOrder)
+	return buildLogo(parent, height, layoutOrder)
 end
 
 function Library:SetTheme(changes)
@@ -4233,7 +4288,7 @@ function Library:BuildSettingsTab(window, name)
 	Menu:AddDropdown("AccentColor", {
 		Text = "Accent",
 		Values = sortedKeys(self.AccentPresets),
-		Default = "Violet",
+		Default = self.AccentPresets.Gold and "Gold" or "Violet",
 		Callback = function(value)
 			Library:SetTheme({ Accent = Library.AccentPresets[value] })
 		end,
