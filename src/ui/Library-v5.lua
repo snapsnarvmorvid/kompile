@@ -65,7 +65,7 @@ local STATUSBAR = 26
 local LOGO_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark.png"
 local LOGO_PATH = "Kompile/assets/wordmark.png"
 local LOGO_RATIO = 335 / 80
-local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim_purple.png"
+local LOGO_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/wordmark_anim.png"
 local LOGO_ANIM_PATH = "Kompile/assets/wordmark_anim_v2.png"
 local LOGO_ANIM = { Width = 251, Height = 64, Columns = 4, Frames = 60, Fps = 20 }
 local ICON_ANIM_URL = "https://raw.githubusercontent.com/snapsnarvmorvid/Kompile/main/assets/icon_anim.png"
@@ -468,11 +468,7 @@ local function flash(target)
 end
 
 local assetCache = {}
-local assetLoading = {}
 local function cachedAsset(url, path)
-	while assetLoading[path] do
-		task.wait()
-	end
 	if assetCache[path] ~= nil then
 		return assetCache[path] or nil
 	end
@@ -482,7 +478,6 @@ local function cachedAsset(url, path)
 		or type(isfile) ~= "function" or type(isfolder) ~= "function" or type(makefolder) ~= "function" then
 		return nil
 	end
-	assetLoading[path] = true
 	local ok, id = pcall(function()
 		local cached = isfile(path) and readfile(path) or ""
 		if cached:sub(2, 4) ~= "PNG" then
@@ -499,7 +494,6 @@ local function cachedAsset(url, path)
 		end
 		return getAsset(path)
 	end)
-	assetLoading[path] = nil
 	if ok and type(id) == "string" and id ~= "" then
 		assetCache[path] = id
 	end
@@ -3310,7 +3304,6 @@ local function startSheen()
 	end)
 end
 Library.SheenSkip = { KompileEspText = true, EspPreview = true }
-Library.GoldSkip = Library.SheenSkip
 
 function Library:CreateWindow(info)
 	info = info or {}
