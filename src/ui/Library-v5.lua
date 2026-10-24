@@ -4256,14 +4256,6 @@ function Library:LoadAutoload()
 	end
 end
 
-local function sortedKeys(map)
-	local keys = {}
-	for key in pairs(map) do
-		table.insert(keys, key)
-	end
-	table.sort(keys)
-	return keys
-end
 function Library:BuildSettingsTab(window, name)
 	local Tab = window:AddTab(name or "Settings")
 
